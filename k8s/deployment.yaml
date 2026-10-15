@@ -39,10 +39,15 @@ spec:
           value: "s3://public-output/sdm"
         - name: SDM_DUCKDB_THREADS
           value: "64"
+        # Measured on NRP (docs/benchmarks.md): more threads made fits slower.
+        # BRT took 10 s at 32 threads vs 1.8 s at 8; MaxEnt 9.3 s with OpenBLAS
+        # unset (it grabs every core) vs 3.5 s at 4.
         - name: SDM_MODEL_THREADS
-          value: "32"
+          value: "8"
         - name: OMP_NUM_THREADS
-          value: "32"
+          value: "8"
+        - name: OPENBLAS_NUM_THREADS
+          value: "4"
         - name: DUCKDB_MEMORY_LIMIT
           value: "100GB"
         resources:
