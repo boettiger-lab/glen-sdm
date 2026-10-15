@@ -251,6 +251,11 @@ def run(spec: dict, log=print) -> dict:
         "suitable_area_km2": round(float(pred_df.suitable.sum()) * area, 1),
         "range_by_region": regions_now,
         "notes": [
+            (f"Background: {len(bg_idx)} cells sampled in proportion to GBIF records of "
+             f"{tg['rank']} {tg['name']} (target-group correction for sampling bias)." if tg else
+             f"Background: {len(bg_idx)} uniformly random cells; no correction for sampling "
+             "bias was applied." if mode == "presence-background" else
+             "Absences: user-supplied absence records were used instead of background cells."),
             "TSS and AUC are presence vs background unless mode is presence-absence.",
             "Suitability is relative (cloglog-scale for maxent); not an occupancy probability.",
             "n_extrapolated counts covariates outside the training range in each cell.",
