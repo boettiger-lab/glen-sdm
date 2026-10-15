@@ -58,9 +58,10 @@ def _compact(summary: dict) -> dict:
         out["top_covariates"] = [c for c, _ in sorted(tot.items(), key=lambda kv: -kv[1])[:6]]
     out["next_step"] = (
         "To display on a geo-agent map, call add_hex_tile_layer with the arguments in "
-        "artifacts.map_layers.suitability (and artifacts.map_layers.range for the range "
-        "(add it second so it draws on top) exactly as given. Otherwise link the user to artifacts.map. For full "
-        "resolution tiles, pass artifacts.hex_tiles.sql/agg to register_hex_tiles."
+        "artifacts.map_layers.suitability, then again with artifacts.map_layers.range "
+        "(second, so the range draws on top), passing both exactly as given. Otherwise "
+        "link the user to artifacts.map. For full resolution tiles, pass "
+        "artifacts.hex_tiles.sql/agg to register_hex_tiles."
     )
     return out
 
