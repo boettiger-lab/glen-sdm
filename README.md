@@ -1,5 +1,7 @@
 # hexsdm: species distribution models over MCP
 
+Documentation: [boettiger-lab.github.io/glen-sdm](https://boettiger-lab.github.io/glen-sdm/), including [which data layers go into a model](https://boettiger-lab.github.io/glen-sdm/data-layers.html) and [all fit_sdm parameters](https://boettiger-lab.github.io/glen-sdm/usage.html).
+
 An MCP server that fits species distribution models (SDMs) on demand from occurrence records and the habitat, climate and terrain layers in the [boettiger-lab STAC catalog](https://s3-west.nrp-nautilus.io/public-data/stac/catalog.json). It returns a suitability surface on the H3 grid, a range polygon, cross-validated performance, and optionally a projection under future climate. It is a companion to [mcp-data-server](https://github.com/boettiger-lab/mcp-data-server) and reads the same data the same way: DuckDB streaming H3-indexed parquet from S3.
 
 ![California tiger salamander: ensemble suitability on H3 res 8, range polygon, GBIF presences and spatial-CV metrics](docs/img/tiger-salamander.png)

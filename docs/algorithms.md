@@ -1,3 +1,8 @@
+---
+title: Algorithms
+nav_order: 4
+---
+
 # Species distribution model algorithms: literature and implementations
 
 This is a summary of the common algorithms for fitting species distribution models (SDMs) from occurrence records and environmental layers, with the canonical papers and the main R and Python implementations. DOIs were checked against Crossref and package pages against CRAN, PyPI and GitHub on 2026-10-15. Items marked [verify] could not be confirmed from the source.
