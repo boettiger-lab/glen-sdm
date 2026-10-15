@@ -86,7 +86,7 @@ Hierarchical Bayesian models are the right tool for uncertainty, imperfect detec
 ## Ensembles
 
 - **biomod2.** Thuiller et al. 2009, [10.1111/j.1600-0587.2008.05742.x](https://doi.org/10.1111/j.1600-0587.2008.05742.x); [CRAN](https://cran.r-project.org/package=biomod2). The 2026 extension to more data types is Guéguen et al., [10.1002/ecog.08588](https://doi.org/10.1002/ecog.08588).
-- **hexsdm.** It averages its members weighted by cross-validated AUC − 0.5. By default the members are MaxEnt, BRT, down-sampled RF and GLM.
+- **hexsdm.** It averages its members weighted by cross-validated AUC − 0.5. By default the members are down-sampled RF and GLM (see [benchmarks](benchmarks.md#agreement-with-expert-range-maps)); MaxEnt and BRT can be added.
 
 ## Workflow components
 

@@ -43,6 +43,34 @@ Same training set. R defaults follow Valavi et al. 2022 and the dismo vignette.
 - **RF and GLM** are already fast in R.
 - **Prediction** of MaxEnt over 50,000 cells takes 0.01 s, because only the features with nonzero coefficients are evaluated.
 
+## Agreement with expert range maps
+
+We compared each model against CDFW's State Wildlife Action Plan (SWAP 2025) range maps for seven California species of greatest conservation need (SGCN):
+- *Ambystoma californiense*
+- *Gambelia sila*
+- *Phrynosoma blainvillii*
+- *Spea hammondii*
+- *Dipodomys ingens*
+- *Thamnophis gigas*
+- *Actinemys marmorata*
+
+Each species was fit with `domain: {"type": "region", "region": "US-CA"}` at H3 resolution 8. Each model's suitability was then scored by Mann-Whitney AUC over all California cells, with membership of the SGCN range as the label. The global-30x30 test session ran this comparison; the per-run summaries are on S3 with the other results.
+
+| Model | Mean AUC against SGCN range |
+|---|---|
+| maxent + brt + rf + glm ensemble | 0.962 |
+| maxent + rf + glm | 0.962 |
+| rf + glm (equal weights) | 0.961 |
+| rf | 0.955 |
+| glm | 0.953 |
+| maxent | 0.952 |
+| brt | 0.910 |
+
+- **BRT** was weakest on the species with fewest presences: 0.80 for *D. ingens* (34 presence cells) and 0.85 for *T. gigas* (54).
+- **RF + GLM matched the four-model ensemble** at about half the compute. California fits took 20–25 s, against 28–54 s for the four-model ensemble.
+- **New default.** From v0.4.0, RF + GLM is the default (`algorithms: ["rf", "glm"]`, CV-weighted). MaxEnt and BRT remain available.
+- **Caveat.** SGCN ranges are expert-drawn envelopes, not surveyed distributions. High AUC against them measures agreement with expert opinion, not predictive accuracy for occupancy.
+
 ## Compute profile on the NRP deployment
 
 This profile is for the default run on the production pod (8 model threads, OpenBLAS 4): tiger salamander, 255,074 res-8 cells, 201 presence cells, 20,000 background cells, 18 covariates. Script: `benchmarks/profile_pipeline.py`.

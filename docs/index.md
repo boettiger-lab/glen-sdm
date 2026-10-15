@@ -20,7 +20,7 @@ Every step works on H3 cells. All input layers are already indexed at H3 resolut
 3. **Resolution.** The model uses the finest H3 resolution from 5 to 8 that keeps the study area under 2 million cells.
 4. **Covariates.** 18 predictors are read for every cell in the study area: 7 CHELSA climate variables, elevation and roughness, 8 land-cover fractions and the Global Human Modification index. See [Data layers](data-layers.md).
 5. **Background.** 20,000 cells are sampled from the study area, either uniformly or in proportion to GBIF sampling effort for the species' taxonomic class.
-6. **Models.** MaxEnt, boosted regression trees, random forest and GLM are fit by default. Each is evaluated by spatial block cross-validation, and they are combined into an ensemble weighted by cross-validated AUC. See [Algorithms](algorithms.md).
+6. **Models.** A down-sampled random forest and a GLM are fit by default; MaxEnt, boosted regression trees, GAM, BIOCLIM and Mahalanobis distance can be requested. Each is evaluated by spatial block cross-validation, and they are combined into an ensemble weighted by cross-validated AUC. See [Algorithms](algorithms.md).
 7. **Range.** Suitability is thresholded (maxSSS by default) into a binary range.
 8. **Projection.** Optionally, the fitted models are re-run with future CHELSA climate, holding the other layers at present-day values.
 

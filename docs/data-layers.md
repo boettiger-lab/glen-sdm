@@ -43,7 +43,7 @@ Records are reduced to one presence per occupied H3 cell at the model resolution
 
 ### Species names
 
-From the 2026-09 snapshot, GBIF matches names against the Catalogue of Life, which places some species in different genera from older usage. For example, the California red-legged frog is filed as *Amerana draytonii*, so a request for *Rana draytonii* finds no records. If a fit fails with too few occupied cells, look the name up in the GBIF species index (`s3://public-gbif/2026-09/species-h0-index.parquet`), for example by searching on the species epithet.
+From the 2026-09 snapshot, GBIF matches names against the Catalogue of Life, which places some species in different genera from older usage. For example, the California red-legged frog is filed as *Amerana draytonii*, so a request for *Rana draytonii* finds no records. When a name is not in the GBIF species index (`s3://public-gbif/2026-09/species-h0-index.parquet`), `fit_sdm` fails with that message and lists index names that share the epithet or the genus, so a request for *Rana draytonii* suggests *Amerana draytonii*.
 
 ### Threatened and sensitive species
 
@@ -60,7 +60,7 @@ Data providers often generalise the coordinates of threatened species, for examp
 | *Pseudacris regilla* (common) | 68,023 | 22.3% | 38 m |
 | *Sceloporus occidentalis* (common) | 156,956 | 16.6% | 27 m |
 
-A model for such a species is fit to the minority of records with precise coordinates. That is the right choice at resolution 8, but it can leave too few records, or a sample biased towards the datasets that publish exact locations. Raising `max_uncertainty_m` keeps more records at the cost of spatial precision; if you do, also fit at a coarser `resolution` (5 or 6). Agency survey data supplied as your own points avoids the problem.
+A model for such a species is fit to the minority of records with precise coordinates. That is the right choice at resolution 8, but it can leave too few records, or a sample biased towards the datasets that publish exact locations. Raising `max_uncertainty_m` keeps more records at the cost of spatial precision; if you do, also fit at a coarser `resolution` (5 or 6). Agency survey data supplied as your own points avoids the problem. Each result reports how many records the uncertainty filter dropped, and adds an `uncertainty_note` to `occurrences` when it dropped more than a quarter of them.
 
 **Your own points.** Occurrences can instead be a GeoJSON FeatureCollection of points (inline or by URL) or a list of `[lon, lat]` pairs. A GeoJSON feature with property `presence: 0`, or a pair in the `absences` list, is a true absence. With 5 or more absence cells, the model uses them in place of random background (presence-absence mode).
 

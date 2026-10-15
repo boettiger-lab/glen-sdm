@@ -190,11 +190,27 @@ def _custom_layer_sql(spec: dict) -> tuple[str, list[str]]:
 GBIF_BAD_ISSUES = "['ZERO_COORDINATE','COORDINATE_INVALID','COORDINATE_OUT_OF_RANGE','COUNTRY_COORDINATE_MISMATCH']"
 
 
-def gbif_occurrences(con, spec: dict) -> pd.DataFrame:
+def _species_suggestions(con, name: str, limit: int = 5) -> list[str]:
+    """Names in the GBIF species index sharing the epithet or the genus of `name`."""
+    parts = name.split()
+    if len(parts) < 2:
+        return []
+    genus, epithet = parts[0], parts[-1]
+    rows = con.sql(f"""
+      SELECT DISTINCT species FROM read_parquet('{GBIF_SPECIES_INDEX}')
+      WHERE species LIKE {q('% ' + epithet)} OR species LIKE {q(genus + ' %')}
+      ORDER BY (species LIKE {q('% ' + epithet)}) DESC, species LIMIT {int(limit)}
+    """).fetchall()
+    return [r[0] for r in rows]
+
+
+def gbif_occurrences(con, spec: dict) -> tuple[pd.DataFrame, dict]:
     """Occurrence counts per h8 cell for a GBIF species, with standard quality filters.
 
     spec: {"species": "Genus species"} or {"specieskey": "..."}; optional
     min_year, max_year, max_uncertainty_m (default 1000), basis_of_record (list).
+    Returns (per-cell counts, info) where info reports how many records the
+    coordinate-uncertainty filter removed.
     """
     if "specieskey" in spec:
         key = f"specieskey = {q(spec['specieskey'])}"
@@ -202,10 +218,19 @@ def gbif_occurrences(con, spec: dict) -> pd.DataFrame:
         key = f"species = {q(spec['species'])}"
     else:
         raise ValueError("gbif occurrences need 'species' or 'specieskey'")
+    hit = con.sql(f"SELECT count(*) FROM read_parquet('{GBIF_SPECIES_INDEX}') WHERE {key}").fetchone()[0]
+    if not hit:
+        name = spec.get("species") or spec.get("specieskey")
+        sugg = _species_suggestions(con, spec["species"]) if "species" in spec else []
+        msg = (f"{name!r} is not a species name in the GBIF 2026-09 snapshot, which uses the "
+               "Catalogue of Life backbone (some species have new genus names).")
+        if sugg:
+            msg += " Similar names: " + ", ".join(sugg) + "."
+        raise ValueError(msg)
     where = [key, f"NOT list_has_any(issue, {GBIF_BAD_ISSUES})",
              "coalesce(occurrencestatus, 'PRESENT') <> 'ABSENT'"]
     unc = float(spec.get("max_uncertainty_m", 1000))
-    where.append(f"(coordinateuncertaintyinmeters IS NULL OR coordinateuncertaintyinmeters <= {unc})")
+    unc_ok = f"(coordinateuncertaintyinmeters IS NULL OR coordinateuncertaintyinmeters <= {unc})"
     if spec.get("min_year"):
         where.append(f"year >= {int(spec['min_year'])}")
     if spec.get("max_year"):
@@ -216,13 +241,26 @@ def gbif_occurrences(con, spec: dict) -> pd.DataFrame:
     else:
         where.append("basisofrecord NOT IN ('FOSSIL_SPECIMEN', 'LIVING_SPECIMEN')")
     sql = f"""
-      SELECT h8, count(*)::INT AS n, any_value(class) AS class, any_value("order") AS "order"
+      SELECT h8, (count(*) FILTER ({unc_ok}))::INT AS n, count(*)::INT AS n_all,
+             any_value(class) AS class, any_value("order") AS "order"
       FROM read_parquet('{GBIF_HEX}', hive_partitioning=true)
       WHERE h0 IN (SELECT h0 FROM read_parquet('{GBIF_SPECIES_INDEX}') WHERE {key})
         AND {' AND '.join(where)}
       GROUP BY h8
     """
-    return con.sql(sql).df()
+    df = con.sql(sql).df()
+    n_all, n_kept = int(df.n_all.sum()), int(df.n.sum())
+    info = {"records_before_uncertainty_filter": n_all,
+            "dropped_by_uncertainty_filter": n_all - n_kept,
+            "max_uncertainty_m": unc}
+    if n_all and (n_all - n_kept) / n_all > 0.25:
+        info["uncertainty_note"] = (
+            f"{100 * (n_all - n_kept) / n_all:.0f}% of quality-filtered records have coordinate "
+            f"uncertainty above {unc:g} m and were dropped. This is common for sensitive species, "
+            "whose public coordinates are generalised (e.g. iNaturalist obscured locations, ~28 km). "
+            "Raising max_uncertainty_m keeps them, but only at a coarser resolution (5 or 6) do "
+            "such records place a species in the right cell.")
+    return df[df.n > 0].reset_index(drop=True), info
 
 
 def _points_from_geojson(gj) -> list[tuple[float, float, int]]:
@@ -295,8 +333,8 @@ def remove_spatial_outliers(pres: pd.DataFrame, multiplier: float = 5.0, max_poi
 def load_occurrences(con, occ: dict) -> tuple[pd.DataFrame, pd.DataFrame | None, dict]:
     """Return (presences per h8, absences per h8 or None, info)."""
     if "gbif" in occ:
-        pres = gbif_occurrences(con, occ["gbif"])
-        info = {"source": "gbif", "records": int(pres.n.sum()) if len(pres) else 0,
+        pres, unc_info = gbif_occurrences(con, occ["gbif"])
+        info = {"source": "gbif", "records": int(pres.n.sum()) if len(pres) else 0, **unc_info,
                 "class": pres["class"].mode().iat[0] if len(pres) else None,
                 "order": pres["order"].mode().iat[0] if len(pres) else None}
         pres = pres[["h8", "n"]]

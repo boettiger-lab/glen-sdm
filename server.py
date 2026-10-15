@@ -73,9 +73,11 @@ def list_sdm_algorithms() -> dict:
     """List the species distribution model algorithms this server can fit.
 
     Returns, per algorithm: data requirement (presence-only vs presence-background),
-    relative speed, a one-line description and a reference. The default set
-    (maxent, brt, rf, glm, combined as a CV-weighted ensemble) follows the top
-    performers of the Valavi et al. 2022 benchmark."""
+    relative speed, a one-line description and a reference. The default is a
+    CV-weighted ensemble of down-sampled random forest and GLM: on seven
+    California species scored against expert range maps it matched the
+    four-model ensemble (mean AUC 0.961 vs 0.962) at about half the compute.
+    MaxEnt and BRT (Valavi et al. 2022 top group) remain available."""
     return {"algorithms": ALGORITHM_INFO, "default": pipeline.DEFAULTS["algorithms"],
             "ensemble_default": True}
 
@@ -144,7 +146,7 @@ def fit_sdm(
             A feature property presence=0 marks a true absence.
         {"points": [[lon, lat], ...], "absences": [[lon, lat], ...]}
     - algorithms: subset of bioclim, mahalanobis, glm, gam, maxent, brt, rf.
-      Default ["maxent", "brt", "rf", "glm"].
+      Default ["rf", "glm"] (add "maxent" or "brt" for a larger ensemble).
     - covariates: groups from list_covariate_layers (default climate, elevation,
       landcover, human_modification) and/or custom {"path","columns","h3_column"} dicts.
     - domain (study area): {"type": "buffer", "buffer_km": 100} (default),

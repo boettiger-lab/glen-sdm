@@ -11,9 +11,9 @@ import pandas as pd
 from . import data, evaluate, outputs
 from .models import ALGORITHMS
 
-VERSION = "0.3.4"  # part of the cache key: bump when results would change
+VERSION = "0.4.0"  # part of the cache key: bump when results would change
 DEFAULTS = {
-    "algorithms": ["maxent", "brt", "rf", "glm"],
+    "algorithms": ["rf", "glm"],
     "covariates": ["climate", "elevation", "landcover", "human_modification"],
     "domain": {"type": "buffer", "buffer_km": 100},
     "resolution": None,
@@ -88,7 +88,10 @@ def run(spec: dict, log=print) -> dict:
     # 1. occurrences
     pres8, abs8, occ_info = data.load_occurrences(con, spec["occurrences"])
     if len(pres8) < 5:
-        raise ValueError(f"only {len(pres8)} occupied cells after filtering; need at least 5")
+        msg = f"only {len(pres8)} occupied cells after filtering; need at least 5."
+        if occ_info.get("uncertainty_note"):
+            msg += " " + occ_info["uncertainty_note"]
+        raise ValueError(msg)
     tick("occurrences")
 
     # 2. domain + resolution

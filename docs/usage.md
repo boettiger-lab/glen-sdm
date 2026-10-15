@@ -51,7 +51,7 @@ A request with bias correction, a state study area and a 2050 projection:
 | Parameter | Default | Values |
 |---|---|---|
 | `occurrences` | required | `{"gbif": {...}}`, `{"geojson": ...}`, or `{"points": [...], "absences": [...]}`. See [Data layers: occurrences](data-layers.md#occurrences). |
-| `algorithms` | `["maxent", "brt", "rf", "glm"]` | any of `maxent`, `brt`, `rf`, `glm`, `gam`, `bioclim`, `mahalanobis`. See [Algorithms](algorithms.md). |
+| `algorithms` | `["rf", "glm"]` | any of `maxent`, `brt`, `rf`, `glm`, `gam`, `bioclim`, `mahalanobis`. See [Algorithms](algorithms.md). |
 | `ensemble` | `true` | combine the algorithms, weighted by cross-validated AUC − 0.5. With `false`, the first listed algorithm is the final model and the others are reported in `cv_metrics` only. |
 | `covariates` | `["climate", "elevation", "landcover", "human_modification"]` | group names and custom layer objects. See [Data layers: covariates](data-layers.md#covariates). |
 | `domain` | `{"type": "buffer", "buffer_km": 100}` | `buffer`, `region`, `country` or `bbox`. See [Data layers: study area](data-layers.md#study-area). |
@@ -85,7 +85,7 @@ Models are evaluated by spatial block cross-validation.
 |---|---|
 | `status`, `run_id` | `done`, `running` or `failed`, and the cache key |
 | `mode` | `presence-background` or `presence-absence` |
-| `occurrences` | record and cell counts, the species' class and order, outlier cells removed |
+| `occurrences` | record and cell counts, the species' class and order, outlier cells removed, records dropped by the coordinate-uncertainty filter, and an `uncertainty_note` when that is more than a quarter of them |
 | `domain`, `resolution`, `background_cells`, `background_bias` | the study area and sampling actually used |
 | `covariates`, `top_covariates` | predictors used, and the most important by permutation |
 | `final_model`, `ensemble_weights` | `ensemble` or the single algorithm, and member weights |

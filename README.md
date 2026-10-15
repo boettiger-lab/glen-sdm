@@ -40,7 +40,7 @@ The model unit is an H3 cell. Every covariate layer in the catalog is already in
 | `bioclim` | presence-only | envelope baseline |
 | `mahalanobis` | presence-only | distance-to-centroid baseline |
 
-The defaults (maxent, brt, rf, glm) follow the top group of the Valavi et al. 2022 benchmark.
+The default is an ensemble of rf and glm. On seven California species of greatest conservation need, scored against CDFW expert range maps, it matched the four-model ensemble of the Valavi et al. 2022 top group (mean AUC 0.961 vs 0.962) at about half the compute; see [docs/benchmarks.md](docs/benchmarks.md#agreement-with-expert-range-maps). `maxent` and `brt` remain available.
 
 - **Literature.** The algorithms, references and implementations are reviewed in [docs/algorithms.md](docs/algorithms.md). That review includes whether Bayesian MCMC models are the gold standard; the benchmarks say no for prediction from presence-only data.
 - **Speed and validation.** These are in [docs/benchmarks.md](docs/benchmarks.md).
@@ -92,7 +92,7 @@ Set `SDM_MODEL_THREADS`, `OMP_NUM_THREADS` and `OPENBLAS_NUM_THREADS` explicitly
 - **Defaults.** Are these right for a general-purpose tool?
   - 20,000 background cells, a 100 km buffer domain, and maxSSS thresholds;
   - the CoordinateCleaner-style outlier rule;
-  - the four-model ensemble weighted by AUC.
+  - the rf + glm ensemble weighted by AUC.
 - **MaxEnt tuning.** The regularization multiplier and feature classes are not tuned (ENMeval-style). Should tuning be on by default, given that it multiplies cost by the size of the grid?
 - **GAM smoothness.** It uses a fixed ridge penalty. Is REML selection worth adding?
 - **Collinearity.** There is no screening of correlated covariates. Should there be a VIF or correlation filter, or a curated default set?
