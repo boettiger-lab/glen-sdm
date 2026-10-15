@@ -15,6 +15,6 @@ map.on("load", () => {
     paint: kind === "range" ? {"line-color": "#f40"} : {"fill-color": color, "fill-opacity": 0.8}};
   if (kind === "vector") lyr["source-layer"] = "layer";
   map.addLayer(lyr);
-  map.once("idle", () => { window.RESULT = Math.round(performance.now() - t0); });
+  map.once("idle", () => { window.RESULT = [Math.round(performance.now() - t0), map.queryRenderedFeatures({layers: ["x"]}).length]; });
 });
 </script></body></html>

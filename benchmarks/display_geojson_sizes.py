@@ -8,7 +8,7 @@ for res in (8, 7, 6):
     for c, s in rows:
         ring = [[round(lng, 5), round(lat, 5)] for lat, lng in h3.cell_to_boundary(h3.int_to_str(c))]
         ring.append(ring[0])
-        feats.append('{"type":"Feature","properties":{"s":%s},"geometry":{"type":"Polygon","coordinates":%s}}' % (s, json.dumps(ring, separators=(",", ":"))))
+        feats.append('{"type":"Feature","properties":{"s":%s},"geometry":{"type":"Polygon","coordinates":[%s]}}' % (s, json.dumps(ring, separators=(",", ":"))))
     body = '{"type":"FeatureCollection","features":[' + ",".join(feats) + "]}"
     tg = time.time() - t
     p = f"{d}/hex{res}.geojson"; open(p, "w").write(body)

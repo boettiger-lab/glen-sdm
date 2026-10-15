@@ -74,16 +74,16 @@ The tiger salamander predictions (255,074 res-8 cells) were displayed three ways
 
 **Option 3: the dissolved range polygon,** 0.16 MB (0.06 MB gzip).
 
-Render times were measured in MapLibre GL 4.7.1 in headless Chromium (software WebGL), from adding the source to the map's first `idle` event, over 3 repeats:
+Render times were measured in MapLibre GL 4.7.1 in headless Chromium (software WebGL), from adding the source to the map's first `idle` event, over 3 repeats. Each run also counted rendered features (`queryRenderedFeatures`) to confirm the layer drew.
 
-| Source | Time to idle |
-|---|---|
-| vector tiles, z6 view of California | 1.3–2.3 s |
-| vector tiles, z9 | 0.55–0.96 s |
-| GeoJSON res 6 | 0.36–0.37 s |
-| GeoJSON res 7 | 1.1–1.2 s |
-| GeoJSON res 8 | 7.2–8.0 s |
-| range polygon | 0.36–0.38 s |
+| Source | Time to idle | Features rendered |
+|---|---|---|
+| vector tiles, z6 view of California (serves res 7) | 1.3–1.6 s | 37,036 |
+| vector tiles, z9 | 0.53–0.60 s | 18,993 |
+| GeoJSON res 6 | 0.39–0.41 s | 5,483 |
+| GeoJSON res 7 | 1.29–1.31 s | 37,070 |
+| GeoJSON res 8 | 6.8–6.9 s | 256,026 |
+| range polygon | 0.34–0.38 s | 2 |
 
 The GeoJSON files were served from localhost, so these times exclude download; at 1.8 MB gzip the res-7 file adds well under a second on a normal connection. The vector tiles came over the network from the production server.
 
@@ -92,6 +92,8 @@ Up to about 40,000 hexes, GeoJSON renders as fast as the tile pyramid. It also n
 hexsdm therefore returns GeoJSON layers by default. The suitability surface is coarsened (by mean) to the finest resolution with at most 40,000 cells, and the range polygon is included. The full-resolution data remain available as hex tiles through `register_hex_tiles` when someone needs to zoom in at res 8.
 
 Reproduce with `benchmarks/display_geojson_sizes.py` and `benchmarks/display_render_bench.py`.
+
+An earlier run of this benchmark wrote hex polygons without the outer ring array. MapLibre dropped them silently, which made the GeoJSON timings meaningless. The feature counts above guard against that.
 
 ## Reproducing
 

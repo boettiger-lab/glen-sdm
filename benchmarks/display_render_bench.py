@@ -14,6 +14,6 @@ async def main():
                 await pg.goto(f"http://localhost:8765/bench.html?kind={kind}&z={z}&src={src}")
                 await pg.wait_for_function("window.RESULT !== undefined", timeout=180000)
                 ts.append(await pg.evaluate("window.RESULT")); await pg.close()
-            print(f"{kind:8s} z{z} {src.split('/')[-1] if kind!='vector' else 'mvt'}: ms to idle {ts}", flush=True)
+            print(f"{kind:8s} z{z} {src.split('/')[-1] if kind!='vector' else 'mvt'}: [ms to idle, features rendered] {ts}", flush=True)
         await b.close()
 asyncio.run(main())

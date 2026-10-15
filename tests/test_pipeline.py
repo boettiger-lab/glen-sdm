@@ -82,3 +82,5 @@ def test_map_layers_local(tmp_path, monkeypatch):
     assert str(lay["display_h3_res"]) in meta["value_stats"]["suitability"]["by_res"]
     data = _j.loads((tmp_path / "tiles/hex/abc123/data.geojson").read_text())
     assert len(data["features"]) == lay["display_cells"]
+    ring = data["features"][0]["geometry"]["coordinates"][0]
+    assert len(ring) == 7 and ring[0] == ring[-1] and len(ring[0]) == 2  # Polygon = [ring], ring = [[x, y], ...]

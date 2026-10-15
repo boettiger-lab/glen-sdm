@@ -163,7 +163,7 @@ def _hex_geojson(df: pd.DataFrame) -> str:
     for c, s in zip(df.cell.to_numpy().tolist(), df.suitability.to_numpy().tolist()):
         ring = [[round(lng, 5), round(lat, 5)] for lat, lng in h3.cell_to_boundary(format(c, "x"))]
         ring.append(ring[0])
-        feats.append('{"type":"Feature","properties":{"suitability":%.3f},"geometry":{"type":"Polygon","coordinates":%s}}'
+        feats.append('{"type":"Feature","properties":{"suitability":%.3f},"geometry":{"type":"Polygon","coordinates":[%s]}}'
                      % (s, json.dumps(ring, separators=(",", ":"))))
     return '{"type":"FeatureCollection","features":[' + ",".join(feats) + "]}"
 
