@@ -38,6 +38,35 @@ Same training set. R defaults follow Valavi et al. 2022 and the dismo vignette.
 - **RF and GLM** are already fast in R.
 - **Prediction** of MaxEnt over 50,000 cells takes 0.01 s, because only the features with nonzero coefficients are evaluated.
 
+## Compute profile on the NRP deployment
+
+This profile is for the default run on the production pod (8 model threads, OpenBLAS 4): tiger salamander, 255,074 res-8 cells, 201 presence cells, 20,000 background cells, 18 covariates. Script: `benchmarks/profile_pipeline.py`.
+
+| Algorithm | fit | predict all cells | 5-fold spatial CV | permutation importance |
+|---|---|---|---|---|
+| maxent | 2.89 s | 0.22 s | 9.33 s | 0.30 s |
+| brt | 1.10 s | 0.10 s | 0.58 s | 0.22 s |
+| rf | 0.59 s | 0.44 s | 3.08 s | 2.26 s |
+| glm | 0.05 s | 0.08 s | 0.19 s | 0.08 s |
+
+- **Data assembly** took 6.5 s in the cluster: occurrences plus four covariate groups.
+- **Model compute** is about 21 s, and MaxEnt is 12 s of that, mostly its five CV refits. BRT CV is cheap because it reuses the full-data tree count.
+- **Inside a MaxEnt fit** (`benchmarks/profile_maxent.py`, 3.1 s), glum's solves take 2.05 s over 5 working-set rounds with at most 255 active columns. Feature construction is 0.54 s and the KKT checks 0.5 s.
+- **The hot loops are already compiled.** LightGBM is C++, the scikit-learn trees are Cython, and the dense algebra is BLAS. A Rust (or numba) rewrite would pay off mainly as a dedicated MaxEnt coordinate-descent solver in place of glum's per-round overhead [to test].
+- **GPUs are unlikely to help at these sizes** (about 20k training rows, 18 covariates), because transfer and launch overhead would dominate. They would matter for deep or multi-species models or for predicting over tens of millions of cells [to test].
+
+### Concurrent cross-validation
+
+The 20 CV fits (5 folds × 4 algorithms) are independent. Run as concurrent threads on the pod (`benchmarks/parallel_cv.py`):
+
+| Configuration | Time for 20 fits |
+|---|---|
+| sequential, 8 threads per model | 14.6 s |
+| 5 concurrent jobs × 2 threads | 5.9 s |
+| 10 × 2, 20 × 1, 10 × 4 | 6.6–6.7 s |
+
+The gain plateaus at about 2.5×, consistent with the Python interpreter lock in MaxEnt's Python code. A process pool forked from the threaded server deadlocked (OpenMP after fork). Any process-based version would need a spawn context and shared-memory inputs. Concurrent CV is not yet in the pipeline.
+
 ## Down-sampled RF: an approximation that failed
 
 A first version used LightGBM's random-forest mode with class-specific bagging fractions. Its spatial-CV AUC was 0.877 and its Boyce index 0.02, against 0.945 and 0.975 for an exact implementation (bootstrap of n presences and n background points, full-depth scikit-learn trees). The exact version replaced it.
