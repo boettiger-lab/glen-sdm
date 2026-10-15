@@ -11,7 +11,7 @@ import pandas as pd
 from . import data, evaluate, outputs
 from .models import ALGORITHMS
 
-VERSION = "0.3.3"  # part of the cache key: bump when results would change
+VERSION = "0.3.4"  # part of the cache key: bump when results would change
 DEFAULTS = {
     "algorithms": ["maxent", "brt", "rf", "glm"],
     "covariates": ["climate", "elevation", "landcover", "human_modification"],
@@ -222,6 +222,14 @@ def run(spec: dict, log=print) -> dict:
 
     # 9. write outputs
     area = outputs.cell_area_km2(res)
+    try:
+        regions_now = data.region_summary(con, pred_df.cell[pred_df.suitable].to_numpy(), res)
+        regions_future = (data.region_summary(con, proj_df.cell[proj_df.suitable].to_numpy(), res)
+                          if proj_df is not None else None)
+    except Exception as e:  # a summary must never fail the fit
+        log(f"[sdm {rid}] region summary skipped: {e}")
+        regions_now, regions_future = None, None
+    tick("region_summary")
     summary = {
         "run_id": rid,
         "version": VERSION,
@@ -241,6 +249,7 @@ def run(spec: dict, log=print) -> dict:
         "variable_importance": importance,
         "threshold": {"rule": spec["threshold"], "value": round(thr, 4)},
         "suitable_area_km2": round(float(pred_df.suitable.sum()) * area, 1),
+        "range_by_region": regions_now,
         "notes": [
             "TSS and AUC are presence vs background unless mode is presence-absence.",
             "Suitability is relative (cloglog-scale for maxent); not an occupancy probability.",
@@ -252,6 +261,7 @@ def run(spec: dict, log=print) -> dict:
         summary["projection"] = {
             "scenario": spec["project_to"],
             "suitable_area_km2": round(float(proj_df.suitable.sum()) * area, 1),
+            "range_by_region": regions_future,
             "gained_km2": round(float((~both.suitable_now & both.suitable_future).sum()) * area, 1),
             "lost_km2": round(float((both.suitable_now & ~both.suitable_future).sum()) * area, 1),
             "cells_extrapolated": int((proj_df.n_extrapolated > 0).sum()),

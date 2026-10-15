@@ -46,7 +46,7 @@ def _compact(summary: dict) -> dict:
     """What the agent needs to see; full details stay in summary.json."""
     keep = ["run_id", "status", "mode", "resolution", "occurrences", "background_cells",
             "background_bias", "domain", "covariates", "final_model", "ensemble_weights",
-            "cv_metrics", "threshold", "suitable_area_km2", "projection", "artifacts",
+            "cv_metrics", "threshold", "suitable_area_km2", "range_by_region", "projection", "artifacts",
             "elapsed_s", "cached", "notes"]
     out = {k: summary[k] for k in keep if k in summary}
     vi = summary.get("variable_importance") or {}
@@ -61,7 +61,9 @@ def _compact(summary: dict) -> dict:
         "artifacts.map_layers.suitability, then again with artifacts.map_layers.range "
         "(second, so the range draws on top), passing both exactly as given. Otherwise "
         "link the user to artifacts.map. For full resolution tiles, pass "
-        "artifacts.hex_tiles.sql/agg to register_hex_tiles."
+        "artifacts.hex_tiles.sql/agg to register_hex_tiles. When describing where the "
+        "species is predicted to occur, use range_by_region (suitable area by admin "
+        "region, from this model) rather than prior knowledge of the species."
     )
     return out
 
@@ -158,7 +160,9 @@ def fit_sdm(
     - ensemble: combine algorithms weighted by CV AUC (default true).
     - project_to: a future climate scenario, e.g. "chelsa-2-1-ssp585-2041-2070".
 
-    Returns status "done" with metrics and artifact URLs (map viewer, range
+    Returns status "done" with metrics, range_by_region (suitable area by
+    first-level admin region, largest first; describe the predicted geography
+    from this, not from prior knowledge), and artifact URLs (map layers, range
     GeoJSON, predictions parquet), or status "running" with a run_id: then call
     get_sdm_result(run_id, wait_seconds=60). Identical requests are cached.
     """

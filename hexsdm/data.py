@@ -455,3 +455,27 @@ def to_res(h8: pd.Series, res: int) -> np.ndarray:
         return h8.astype("uint64").to_numpy()
     return np.array([h3.str_to_int(h3.cell_to_parent(h3.int_to_str(int(c)), res)) for c in h8],
                     dtype="uint64")
+
+
+def region_summary(con, cells: np.ndarray, res: int, top: int = 8) -> list[dict]:
+    """Area of a cell set by first-level admin region (Overture), largest first.
+
+    Gives the agent named geography taken from the model output, so it does not
+    describe where a range lies from prior knowledge."""
+    if len(cells) == 0:
+        return []
+    con.execute("CREATE OR REPLACE TABLE _sel AS SELECT unnest(?::UBIGINT[]) AS cell", [cells.tolist()])
+    df = con.sql(f"""
+      WITH reg AS (
+        SELECT DISTINCT h3_cell_to_parent(h8, {res}) AS cell, name_en, country
+        FROM read_parquet('{REGIONS}', hive_partitioning=true)
+        WHERE h0 IN (SELECT h0 FROM dom0) AND h3_cell_to_parent(h8, 4) IN (SELECT h4 FROM dom4)
+          AND name_en IS NOT NULL
+      )
+      SELECT name_en AS region, country, count(*) AS n
+      FROM _sel JOIN reg USING (cell) GROUP BY ALL ORDER BY n DESC LIMIT {int(top)}
+    """).df()
+    a = h3.average_hexagon_area(res, unit="km^2")
+    tot = len(cells)
+    return [{"region": r.region, "country": r.country, "suitable_km2": round(r.n * a),
+             "share_of_range": round(r.n / tot, 3)} for r in df.itertuples()]
