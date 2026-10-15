@@ -1,3 +1,8 @@
+---
+title: Benchmarks
+nav_order: 5
+---
+
 # Benchmarks and validation
 
 All numbers are from a shared JupyterLab pod on NRP (2026-10-15), reading data from outside the cluster over the public S3 endpoint. In-cluster reads use the internal Ceph endpoint and should be faster.
