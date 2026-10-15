@@ -1,0 +1,14 @@
+# Same pins as mcp-data-server: mcp 2.x moved mcp.server.fastmcp; community h3
+# extension builds lag new DuckDB releases.
+mcp>=1.29,<2
+duckdb==1.5.4
+numpy
+pandas
+pyarrow
+scipy
+scikit-learn
+lightgbm
+glum
+h3>=4
+uvicorn
+anyio

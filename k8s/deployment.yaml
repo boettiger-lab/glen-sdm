@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sdm-mcp
+  namespace: biodiversity
+spec:
+  # One replica for the first pass: run results and job state live on the pod's
+  # disk. Scaling out needs SDM_OUTPUT_S3 (shared results) plus S3 job markers,
+  # as mcp-data-server does for hex tile builds.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sdm-mcp
+  template:
+    metadata:
+      labels:
+        app: sdm-mcp
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/region
+                    operator: In
+                    values: ["us-west"]
+      containers:
+      - name: server
+        image: ghcr.io/boettiger-lab/glen-sdm:main
+        imagePullPolicy: Always
+        env:
+        - name: S3_DEFAULT_ENDPOINT          # in-cluster Ceph, plain http
+          value: "rook-ceph-rgw-nautiluss3.rook"
+        - name: SDM_PUBLIC_BASE_URL
+          value: "https://sdm-mcp.nrp-nautilus.io"
+        - name: SDM_OUTPUT_DIR
+          value: "/data/sdm-output"
+        # - name: SDM_OUTPUT_S3              # enables hex-tile hand-off to mcp-data-server
+        #   value: "s3://public-output/sdm"
+        - name: SDM_DUCKDB_THREADS
+          value: "64"
+        - name: SDM_MODEL_THREADS
+          value: "32"
+        - name: OMP_NUM_THREADS
+          value: "32"
+        - name: DUCKDB_MEMORY_LIMIT
+          value: "100GB"
+        resources:
+          # Small requests, high limits: same burstable pattern as mcp-data-server.
+          requests:
+            memory: 2Gi
+            cpu: 500m
+          limits:
+            memory: 128Gi
+            cpu: 48
+        ports:
+        - containerPort: 8000
+        volumeMounts:
+        - name: results
+          mountPath: /data
+        readinessProbe:
+          httpGet: {path: /healthz, port: 8000}
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+        livenessProbe:
+          httpGet: {path: /healthz, port: 8000}
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 6
+      volumes:
+      - name: results
+        emptyDir:
+          sizeLimit: 20Gi

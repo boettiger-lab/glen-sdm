@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDM Viewer</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/h3-js@4.1.0/dist/h3-js.umd.js"></script>
+<script src="https://unpkg.com/deck.gl@9.0.38/dist.min.js"></script>
+<style>
+  :root { --bg: #fff; --fg: #1d1d1f; --muted: #6b6b70; --panel: rgba(255,255,255,0.94); --line: #e3e3e6; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111; --fg: #eee; --muted: #a0a0a6; --panel: rgba(28,28,30,0.94); --line: #333; } }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #map { position: absolute; inset: 0; }
+  #panel { position: absolute; top: 12px; left: 12px; width: 320px; max-width: calc(100vw - 48px);
+    max-height: calc(100vh - 48px); overflow: auto; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px 14px; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  h1 { font-size: 16px; margin: 0 0 2px; font-style: italic; }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 2px 4px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  tr.final td { font-weight: 600; }
+  .row { display: flex; gap: 10px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  .legend { height: 10px; border-radius: 3px; margin: 8px 0 2px;
+    background: linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725); }
+  .ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+  a { color: inherit; }
+  .k { color: var(--muted); }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h1 id="title">Loading…</h1>
+  <div class="sub" id="subtitle"></div>
+  <div class="row">
+    <label><input type="radio" name="surface" value="now" checked> Current</label>
+    <label id="futureopt" style="display:none"><input type="radio" name="surface" value="future"> <span id="futurelabel">Future</span></label>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="showhex" checked> Suitability</label>
+    <label><input type="checkbox" id="showrange" checked> Range polygon</label>
+    <label><input type="checkbox" id="showpres" checked> Presences</label>
+  </div>
+  <div class="legend"></div>
+  <div class="ticks"><span>0</span><span>suitability</span><span>1</span></div>
+  <div id="stats" style="margin-top:10px"></div>
+  <div class="sub" id="links" style="margin-top:10px"></div>
+</div>
+<script>
+const RID = "__RUN_ID__";
+const base = `${location.origin}/results/${RID}`;
+const VIRIDIS = [[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
+function viridis(t) {
+  t = Math.max(0, Math.min(1, t)) * (VIRIDIS.length - 1);
+  const i = Math.min(Math.floor(t), VIRIDIS.length - 2), f = t - i, a = VIRIDIS[i], b = VIRIDIS[i + 1];
+  return [0, 1, 2].map(k => Math.round(a[k] + f * (b[k] - a[k])));
+}
+const fmt = (x, d = 3) => (x == null || Number.isNaN(x)) ? "–" : Number(x).toFixed(d);
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: matchMedia("(prefers-color-scheme: dark)").matches
+    ? "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+    : "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+  center: [0, 20], zoom: 2,
+});
+const overlay = new deck.MapboxOverlay({ interleaved: false, layers: [] });
+map.addControl(overlay);
+map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+const state = { surface: "now", cells: {}, range: {}, summary: null };
+
+async function load(name) { const r = await fetch(`${base}/${name}`); return r.ok ? r.json() : null; }
+
+function render() {
+  const cells = state.cells[state.surface] || [];
+  const thr = state.summary.threshold.value;
+  const layers = [];
+  if (document.getElementById("showhex").checked) layers.push(new deck.H3HexagonLayer({
+    id: "suit-" + state.surface, data: cells, getHexagon: d => d[0], extruded: false, stroked: false,
+    highPrecision: false, opacity: 0.75,
+    getFillColor: d => [...viridis(d[1] / 1000), d[1] / 1000 < 0.02 ? 60 : 230],
+    pickable: true,
+  }));
+  if (document.getElementById("showrange").checked && state.range[state.surface]) layers.push(new deck.GeoJsonLayer({
+    id: "range-" + state.surface, data: state.range[state.surface], filled: false, stroked: true,
+    getLineColor: [255, 80, 40, 220], lineWidthMinPixels: 1, lineWidthMaxPixels: 1.5,
+  }));
+  if (document.getElementById("showpres").checked) layers.push(new deck.ScatterplotLayer({
+    id: "pres", data: (state.cells.now || []).filter(d => d[2]),
+    getPosition: d => { const [lat, lng] = h3.cellToLatLng(d[0]); return [lng, lat]; },
+    getRadius: 2.5, radiusUnits: "pixels", getFillColor: [255, 255, 255, 230], getLineColor: [0, 0, 0, 200],
+    stroked: true, lineWidthMinPixels: 1,
+  }));
+  overlay.setProps({ layers, getTooltip: ({ object }) => object && object[0] && {
+    text: `suitability ${(object[1] / 1000).toFixed(3)}${object[1] / 1000 >= thr ? " (in range)" : ""}`
+  }});
+}
+
+function statsTable(s) {
+  const cv = s.cv_metrics || {};
+  const names = Object.keys(cv).filter(k => !k.startsWith("_"));
+  let h = `<table><tr><th>model</th><th>AUC</th><th>Boyce</th><th>TSS</th><th>weight</th></tr>`;
+  for (const n of names) {
+    const w = s.ensemble_weights ? s.ensemble_weights[n] : null;
+    h += `<tr class="${n === s.final_model ? "final" : ""}"><td>${n}</td><td>${fmt(cv[n].auc)}</td>` +
+         `<td>${fmt(cv[n].boyce, 2)}</td><td>${fmt(cv[n].tss, 2)}</td><td>${w == null ? "" : fmt(w, 2)}</td></tr>`;
+  }
+  h += `</table><div class="sub">Spatial block CV, ${cv._blocks ? cv._blocks.folds + " folds on H3 res-" + cv._blocks.block_h3_res + " blocks" : "not run"}; presence vs background.</div>`;
+  h += `<div><span class="k">Threshold</span> ${s.threshold.rule} = ${fmt(s.threshold.value)} · ` +
+       `<span class="k">Suitable area</span> ${Math.round(s.suitable_area_km2).toLocaleString()} km²</div>`;
+  if (s.projection) {
+    const p = s.projection;
+    h += `<div><span class="k">${p.scenario}</span>: ${Math.round(p.suitable_area_km2).toLocaleString()} km² ` +
+         `(+${Math.round(p.gained_km2).toLocaleString()} / −${Math.round(p.lost_km2).toLocaleString()})</div>`;
+  }
+  const vi = s.variable_importance || {}, tot = {};
+  for (const m of Object.values(vi)) for (const [c, v] of Object.entries(m)) tot[c] = (tot[c] || 0) + v;
+  const top = Object.entries(tot).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
+  h += `<div><span class="k">Top covariates</span> ${top.join(", ")}</div>`;
+  return h;
+}
+
+(async () => {
+  const s = state.summary = await load("summary.json");
+  const occ = s.spec.occurrences;
+  document.getElementById("title").textContent = occ.gbif ? (occ.gbif.species || occ.gbif.specieskey) : "User occurrences";
+  document.title = (occ.gbif ? occ.gbif.species : "SDM") + " · SDM Viewer";
+  document.getElementById("subtitle").textContent =
+    `${s.final_model} · H3 res ${s.resolution} · ${s.domain.cells.toLocaleString()} cells · ` +
+    `${s.occurrences.presence_cells_at_res} presence cells · ${s.elapsed_s}s`;
+  document.getElementById("stats").innerHTML = statsTable(s);
+  const a = s.artifacts;
+  document.getElementById("links").innerHTML =
+    `<a href="${a.range_geojson}">range.geojson</a> · <a href="${a.predictions_parquet}">predictions.parquet</a> · <a href="${a.summary}">summary.json</a>`;
+  const [cells, range] = await Promise.all([load("cells.json.gz"), load("range.geojson")]);
+  state.cells.now = cells; state.range.now = range;
+  if (s.projection) {
+    document.getElementById("futureopt").style.display = "";
+    document.getElementById("futurelabel").textContent = s.projection.scenario.replace("chelsa-2-1-", "");
+    load("cells_future.json.gz").then(c => { state.cells.future = c; });
+    load("range_future.geojson").then(g => { state.range.future = g; });
+  }
+  // fit to presences
+  let mnx = 180, mny = 90, mxx = -180, mxy = -90;
+  for (const d of cells) { if (!d[2]) continue; const [la, ln] = h3.cellToLatLng(d[0]);
+    mnx = Math.min(mnx, ln); mxx = Math.max(mxx, ln); mny = Math.min(mny, la); mxy = Math.max(mxy, la); }
+  if (mnx < mxx) map.fitBounds([[mnx, mny], [mxx, mxy]], { padding: { top: 40, bottom: 40, left: 360, right: 40 }, duration: 0 });
+  render();
+})();
+for (const el of document.querySelectorAll("input")) el.addEventListener("change", () => {
+  state.surface = document.querySelector("input[name=surface]:checked").value; render();
+});
+</script>
+</body>
+</html>

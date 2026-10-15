@@ -1,0 +1,22 @@
+[project]
+name = "hexsdm"
+version = "0.2.0"
+description = "Species distribution models on the H3 grid, served over MCP"
+requires-python = ">=3.11"
+dependencies = [
+  "mcp>=1.29,<2",
+  "duckdb==1.5.4",
+  "numpy", "pandas", "pyarrow", "scipy",
+  "scikit-learn", "lightgbm", "glum",
+  "h3>=4", "uvicorn", "anyio",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools]
+packages = ["hexsdm"]
+
+[tool.pytest.ini_options]
+markers = ["network: needs S3 access to the public catalog"]
+addopts = "-m 'not network'"
