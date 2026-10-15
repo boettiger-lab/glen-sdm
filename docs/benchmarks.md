@@ -54,7 +54,34 @@ We compared each model against CDFW's State Wildlife Action Plan (SWAP 2025) ran
 - *Thamnophis gigas*
 - *Actinemys marmorata*
 
-Each species was fit with `domain: {"type": "region", "region": "US-CA"}` at H3 resolution 8. Each model's suitability was then scored by Mann-Whitney AUC over all California cells, with membership of the SGCN range as the label. The global-30x30 test session ran this comparison; the per-run summaries are on S3 with the other results.
+Each species was fit with `domain: {"type": "region", "region": "US-CA"}` at H3 resolution 8. Each model's suitability was then scored by Mann-Whitney AUC over all California cells, with membership of the SGCN range as the label.
+
+**Runs.** These were fit with v0.3.4, and the outputs are at `s3://public-output/sdm/<run_id>/`. The request for each species was `{"occurrences": {"gbif": {"species": <name>}}, "domain": {"type": "region", "region": "US-CA"}, "resolution": 8}`. The RF-only runs added `"algorithms": ["rf"], "ensemble": false`. The four-model runs carry every model's prediction in `pred_*` columns.
+
+| Species | four-model run | RF-only run |
+|---|---|---|
+| *Actinemys marmorata* | `5d920a73888ed1ff` | `f2fcdbc369a9d3fe` |
+| *Ambystoma californiense* | `bc66bc784324e17e` | `7c82d21fc622fdb6` |
+| *Dipodomys ingens* | `fae4dae4b2c11f73` | `d9b587c4bc3ee372` |
+| *Gambelia sila* | `54de421b88bb0a5c` | `d224966a88ee3edf` |
+| *Phrynosoma blainvillii* | `6dfde77b8a9c8d59` | `7070a74ccda524f4` |
+| *Spea hammondii* | `cd5823ca4161ead5` | `3f4eb9a1c9716a14` |
+| *Thamnophis gigas* | `21b23e8a5a3fcafa` | `bc5f841612e71c6d` |
+
+**Expert ranges.** These are from `s3://public-swap/california/swap-2025/sgcn-ranges/hex/h0=*/data_0.parquet`, matched on `SWAP_Scientific LIKE '<species>%'`. That match merges the three *A. californiense* distinct-population-segment polygons and both *G. sila* features.
+
+**AUC query.** Run it once per `pred_*` column. The combinations (rf + glm, maxent + rf + glm) are equal-weight means of those columns, not CV-weighted. Tied scores get their average rank. RF votes come in steps of 1/500, so ties are common, but in our check average and minimum ranks differed by at most 0.003.
+
+```sql
+WITH p AS (SELECT h8, pred_rf AS s FROM read_parquet('s3://public-output/sdm/<run_id>/predictions.parquet')),
+g AS (SELECT DISTINCT h8 FROM read_parquet('s3://public-swap/california/swap-2025/sgcn-ranges/hex/h0=*/data_0.parquet', hive_partitioning = true)
+      WHERE h0 IN (SELECT DISTINCT h3_cell_to_parent(h8, 0)::BIGINT FROM p) AND SWAP_Scientific LIKE '<species>%'),
+j AS (SELECT p.s, g.h8 IS NOT NULL AS y FROM p LEFT JOIN g USING (h8)),
+r AS (SELECT y, rank() OVER (ORDER BY s) + (count(*) OVER (PARTITION BY s) - 1) / 2.0 AS rk FROM j)
+SELECT (sum(rk) FILTER (y) - count(*) FILTER (y) * (count(*) FILTER (y) + 1) / 2.0)
+       / (count(*) FILTER (y) * count(*) FILTER (NOT y)) AS auc
+FROM r;
+```
 
 | Model | Mean AUC against SGCN range |
 |---|---|
