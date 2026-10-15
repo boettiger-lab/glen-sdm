@@ -168,7 +168,8 @@ def _hex_geojson(df: pd.DataFrame) -> str:
     return '{"type":"FeatureCollection","features":[' + ",".join(feats) + "]}"
 
 
-def _layer(key: str, geojson: str, value_col: str, res: int, stats: dict, bounds, display_name: str) -> dict:
+def _layer(key: str, geojson: str, value_col: str, res: int, stats: dict, bounds, display_name: str,
+           **style) -> dict:
     """Store an add_hex_tile_layer-compatible GeoJSON layer; return the tool arguments."""
     meta = {"format": "geojson", "value_columns": [value_col], "layer_name": "layer",
             "value_stats": {value_col: {"by_res": {str(res): stats}, "suggested_scale": "linear"}},
@@ -177,7 +178,7 @@ def _layer(key: str, geojson: str, value_col: str, res: int, stats: dict, bounds
     store(f"tiles/hex/{key}/metadata.json", json.dumps(meta), "application/json")
     tile_url = gj_url.rsplit("/", 1)[0] + "/{z}/{x}/{y}.pbf"
     return {"tile_url": tile_url, "format": "geojson", "geojson_url": gj_url,
-            "value_column": value_col, "display_name": display_name}
+            "value_column": value_col, "display_name": display_name, **style}
 
 
 def _bounds(cells) -> list[float]:
@@ -192,8 +193,11 @@ def map_layers(rid: str, pred: pd.DataFrame, res: int, range_gj: dict, label: st
     suit = _layer(f"{rid}{suffix}", _hex_geojson(disp), "suitability", dres,
                   {"min": 0.0, "max": 1.0, "mean": round(float(s.mean()), 4)}, bounds,
                   f"{label} habitat suitability")
+    # in_range is always 1, so on the 0-1 ylorrd ramp the polygon paints a single
+    # dark red; semi-opaque so it reads over the suitability layer.
     rng = _layer(f"{rid}{suffix}-range", json.dumps(range_gj), "in_range", dres,
-                 {"min": 0.0, "max": 1.0, "mean": 1.0}, bounds, f"{label} modelled range")
+                 {"min": 0.0, "max": 1.0, "mean": 1.0}, bounds, f"{label} modelled range (red)",
+                 palette="ylorrd", opacity=0.45, fit_bounds=False)
     return {"suitability": suit, "range": rng, "display_h3_res": dres, "display_cells": int(len(disp))}
 
 

@@ -59,7 +59,7 @@ def _compact(summary: dict) -> dict:
     out["next_step"] = (
         "To display on a geo-agent map, call add_hex_tile_layer with the arguments in "
         "artifacts.map_layers.suitability (and artifacts.map_layers.range for the range "
-        "outline) exactly as given. Otherwise link the user to artifacts.map. For full "
+        "(add it second so it draws on top) exactly as given. Otherwise link the user to artifacts.map. For full "
         "resolution tiles, pass artifacts.hex_tiles.sql/agg to register_hex_tiles."
     )
     return out
