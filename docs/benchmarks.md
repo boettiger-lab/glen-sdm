@@ -58,6 +58,41 @@ The bobcat run is dominated by data I/O.
 
 A covariate stack precomputed at res 4–7 would cut the second number by one to two orders of magnitude. That stack would belong in `data-workflows`.
 
+## Map display: hex tiles or GeoJSON
+
+The tiger salamander predictions (255,074 res-8 cells) were displayed three ways.
+
+**Option 1: vector tiles from mcp-data-server.** `register_hex_tiles` built a res 8–2 pyramid in 4.6 s on the server (production log: copy 2.9 s, stats 1.3 s, bounds 0.4 s). Tiles are then cut on request.
+
+**Option 2: GeoJSON hex polygons,** generated in Python.
+
+| H3 res | cells | generate | size | gzip |
+|---|---|---|---|---|
+| 8 | 255,074 | 3.3 s | 61.8 MB | 11.9 MB |
+| 7 | 36,699 | 0.5 s | 8.9 MB | 1.8 MB |
+| 6 | 5,337 | 0.1 s | 1.3 MB | 0.3 MB |
+
+**Option 3: the dissolved range polygon,** 0.16 MB (0.06 MB gzip).
+
+Render times were measured in MapLibre GL 4.7.1 in headless Chromium (software WebGL), from adding the source to the map's first `idle` event, over 3 repeats:
+
+| Source | Time to idle |
+|---|---|
+| vector tiles, z6 view of California | 1.3–2.3 s |
+| vector tiles, z9 | 0.55–0.96 s |
+| GeoJSON res 6 | 0.36–0.37 s |
+| GeoJSON res 7 | 1.1–1.2 s |
+| GeoJSON res 8 | 7.2–8.0 s |
+| range polygon | 0.36–0.38 s |
+
+The GeoJSON files were served from localhost, so these times exclude download; at 1.8 MB gzip the res-7 file adds well under a second on a normal connection. The vector tiles came over the network from the production server.
+
+Up to about 40,000 hexes, GeoJSON renders as fast as the tile pyramid. It also needs no tile build, no S3 copy and no second tool call by the agent, and the agent round trip costs more than any of these. Above that size GeoJSON grows linearly and loses badly: 7–8 s plus a 12 MB download at res 8.
+
+hexsdm therefore returns GeoJSON layers by default. The suitability surface is coarsened (by mean) to the finest resolution with at most 40,000 cells, and the range polygon is included. The full-resolution data remain available as hex tiles through `register_hex_tiles` when someone needs to zoom in at res 8.
+
+Reproduce with `benchmarks/display_geojson_sizes.py` and `benchmarks/display_render_bench.py`.
+
 ## Reproducing
 
 ```bash

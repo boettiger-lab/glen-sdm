@@ -25,7 +25,7 @@ import anyio
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from hexsdm import data, outputs, pipeline
 from hexsdm.models import ALGORITHM_INFO
@@ -57,9 +57,10 @@ def _compact(summary: dict) -> dict:
                 tot[c] = tot.get(c, 0) + v
         out["top_covariates"] = [c for c, _ in sorted(tot.items(), key=lambda kv: -kv[1])[:6]]
     out["next_step"] = (
-        f"Show the user the map: {summary['artifacts']['map']}. "
-        "The range polygon GeoJSON URL can be added to a map as a fill layer; "
-        "if `hex_tiles` is present, pass its sql/agg to register_hex_tiles for a tiled layer."
+        "To display on a geo-agent map, call add_hex_tile_layer with the arguments in "
+        "artifacts.map_layers.suitability (and artifacts.map_layers.range for the range "
+        "outline) exactly as given. Otherwise link the user to artifacts.map. For full "
+        "resolution tiles, pass artifacts.hex_tiles.sql/agg to register_hex_tiles."
     )
     return out
 
@@ -236,6 +237,9 @@ async def serve_result(request):
         return Response(status_code=404)
     p = outputs.OUTPUT_DIR / rid / name
     if not p.exists():
+        # Results written by another replica or before a restart live on S3.
+        if outputs.OUTPUT_S3:
+            return RedirectResponse(outputs.public_url(f"{rid}/{name}"), status_code=307)
         return Response(status_code=404)
     headers = {"Access-Control-Allow-Origin": "*", "Cache-Control": "public, max-age=86400"}
     if name.endswith(".json.gz"):
@@ -243,6 +247,18 @@ async def serve_result(request):
         return Response(p.read_bytes(), media_type="application/json", headers=headers)
     media = "application/geo+json" if name.endswith("geojson") else None
     return FileResponse(p, media_type=media, headers=headers)
+
+
+async def serve_layer(request):
+    """Local-mode copy of the S3 tiles/hex/<key>/ layout read by geo-agent."""
+    key, name = request.path_params["key"], request.path_params["name"]
+    if name not in ("data.geojson", "metadata.json") or not key.replace("-", "").isalnum():
+        return Response(status_code=404)
+    p = outputs.OUTPUT_DIR / "tiles" / "hex" / key / name
+    if not p.exists():
+        return Response(status_code=404)
+    media = "application/geo+json" if name.endswith("geojson") else "application/json"
+    return FileResponse(p, media_type=media, headers={"Access-Control-Allow-Origin": "*"})
 
 
 VIEWER = (Path(__file__).parent / "viewer.html").read_text()
@@ -264,6 +280,7 @@ def build_app():
     app.router.redirect_slashes = False
     app.add_route("/results/{rid}/{name}", serve_result, methods=["GET"])
     app.add_route("/map/{rid}", serve_map, methods=["GET"])
+    app.add_route("/tiles/hex/{key}/{name}", serve_layer, methods=["GET"])
     app.add_route("/healthz", healthz, methods=["GET"])
     return app
 

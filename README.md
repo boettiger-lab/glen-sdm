@@ -61,14 +61,16 @@ Example arguments:
 
 ## Outputs
 
-Each run writes to `SDM_OUTPUT_DIR/<run_id>/` and serves the files over HTTP:
+Each run stores these files, on S3 when `SDM_OUTPUT_S3` is set (as in the NRP deployment), so links survive pod restarts:
 
-- `/map/<run_id>`: a map viewer (MapLibre and deck.gl) with the suitability hexes, range polygon, presences, CV metrics, and a current/future toggle;
-- `predictions.parquet`: one row per cell, with the H3 index, ensemble suitability, binary range, per-model predictions and an extrapolation count;
-- `range.geojson`: the range polygon;
+- `map_layers`: arguments for geo-agent's existing `add_hex_tile_layer` tool, with `format="geojson"`.
+  - The suitability surface is coarsened to the finest H3 resolution with at most 40,000 cells; see [docs/benchmarks.md](docs/benchmarks.md#map-display-hex-tiles-or-geojson) for why GeoJSON rather than tiles at that size.
+  - The range polygon is a second layer.
+- `/map/<run_id>`: a standalone viewer (MapLibre and deck.gl) with full-resolution hexes, range polygon, presences, CV metrics, and a current/future toggle.
+- `predictions.parquet`: one row per cell, with the H3 index, ensemble suitability, binary range, per-model predictions and an extrapolation count.
+- `range.geojson`: the range polygon.
 - `summary.json`: the full specification, metrics, variable importance and timings.
-
-When `SDM_OUTPUT_S3` is set, the predictions are also copied to S3, and the result includes a `hex_tiles` block. Its SQL can be passed to mcp-data-server's `register_hex_tiles` to build a vector tile pyramid.
+- `hex_tiles`: SQL to pass to mcp-data-server's `register_hex_tiles` for a full-resolution tile pyramid.
 
 ## Running
 

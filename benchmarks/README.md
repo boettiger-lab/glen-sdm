@@ -13,3 +13,12 @@ PYTHONPATH=. python benchmarks/spatial_cv_compare.py /tmp/sdmbench/cats.npz rf,b
 ```
 
 R packages: maxnet, gbm, randomForest, dismo.
+
+Map display benchmark (hex tiles vs GeoJSON):
+
+```bash
+mkdir -p /tmp/gj && cp <predictions.parquet> /tmp/gj/pred.parquet && cp <range.geojson> /tmp/gj/range.geojson
+python benchmarks/display_geojson_sizes.py /tmp/gj
+cp benchmarks/display_render_bench.html /tmp/gj/bench.html && (cd /tmp/gj && python -m http.server 8765 &)
+python benchmarks/display_render_bench.py      # needs playwright + chromium; edit the tile URL to a current register_hex_tiles hash
+```

@@ -63,3 +63,22 @@ def test_end_to_end_gbif(tmp_path, monkeypatch):
                      log=lambda m: None)
     assert s["cv_metrics"]["ensemble"]["auc"] > 0.8
     assert (tmp_path / s["run_id"] / "range.geojson").exists()
+
+
+def test_map_layers_local(tmp_path, monkeypatch):
+    monkeypatch.setattr(outputs, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(outputs, "OUTPUT_S3", "")
+    monkeypatch.setattr(outputs, "DISPLAY_MAX_CELLS", 500)
+    cells = np.array([h3.str_to_int(c) for c in h3.grid_disk(h3.latlng_to_cell(37, -120, 8), 25)], dtype="uint64")
+    pred = pd.DataFrame({"cell": cells, "suitability": np.linspace(0, 1, len(cells)).astype("float32")})
+    pred["suitable"] = pred.suitability > 0.5
+    gj, _ = outputs.range_polygon(pred.cell[pred.suitable].to_numpy(), 8)
+    lay = outputs.map_layers("abc123", pred, 8, gj, "Test")
+    assert lay["display_cells"] <= 500 and lay["display_h3_res"] < 8
+    s = lay["suitability"]
+    assert s["format"] == "geojson" and s["tile_url"].endswith("/tiles/hex/abc123/{z}/{x}/{y}.pbf")
+    import json as _j
+    meta = _j.loads((tmp_path / "tiles/hex/abc123/metadata.json").read_text())
+    assert str(lay["display_h3_res"]) in meta["value_stats"]["suitability"]["by_res"]
+    data = _j.loads((tmp_path / "tiles/hex/abc123/data.geojson").read_text())
+    assert len(data["features"]) == lay["display_cells"]

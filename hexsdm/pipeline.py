@@ -11,7 +11,7 @@ import pandas as pd
 from . import data, evaluate, outputs
 from .models import ALGORITHMS
 
-VERSION = "0.2.0"  # part of the cache key: bump when results would change
+VERSION = "0.3.0"  # part of the cache key: bump when results would change
 DEFAULTS = {
     "algorithms": ["maxent", "brt", "rf", "glm"],
     "covariates": ["climate", "elevation", "landcover", "human_modification"],
