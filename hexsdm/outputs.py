@@ -193,10 +193,10 @@ def map_layers(rid: str, pred: pd.DataFrame, res: int, range_gj: dict, label: st
     suit = _layer(f"{rid}{suffix}", _hex_geojson(disp), "suitability", dres,
                   {"min": 0.0, "max": 1.0, "mean": round(float(s.mean()), 4)}, bounds,
                   f"{label} habitat suitability")
-    # in_range is always 1, so on the 0-1 ylorrd ramp the polygon paints a single
-    # dark red; semi-opaque so it reads over the suitability layer.
+    # in_range is constant 1. min == max tells geo-agent to paint one colour and
+    # draw a single legend swatch (geo-agent #406) rather than a 0-1 ramp.
     rng = _layer(f"{rid}{suffix}-range", json.dumps(range_gj), "in_range", dres,
-                 {"min": 0.0, "max": 1.0, "mean": 1.0}, bounds, f"{label} modelled range (red)",
+                 {"min": 1.0, "max": 1.0, "mean": 1.0}, bounds, f"{label} modelled range",
                  palette="ylorrd", opacity=0.45, fit_bounds=False)
     return {"suitability": suit, "range": rng, "display_h3_res": dres, "display_cells": int(len(disp))}
 
