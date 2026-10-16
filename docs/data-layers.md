@@ -45,6 +45,20 @@ Records are reduced to one presence per occupied H3 cell at the model resolution
 
 From the 2026-09 snapshot, GBIF matches names against the Catalogue of Life, which places some species in different genera from older usage. For example, the California red-legged frog is filed as *Amerana draytonii*, so a request for *Rana draytonii* finds no records. When a name is not in the GBIF species index (`s3://public-gbif/2026-09/species-h0-index.parquet`), `fit_sdm` fails with that message and lists index names that share the epithet or the genus, so a request for *Rana draytonii* suggests *Amerana draytonii*.
 
+### Marine and coastal species
+
+Every predictor is terrestrial: the CHELSA climate layer covers land cells only and defines which cells enter a model. Records at sea therefore have no predictors and are dropped. Fitting a marine species would describe only the strip of coastal land cells that a few records fall in, with a misleadingly high AUC.
+
+The server measures the share of occupied cells inside the study area that are on land (`occurrences.land_share`, out of `presence_cells_in_domain`):
+
+| Land share | What happens |
+|---|---|
+| under 50% | the fit is refused with an explanation; `allow_offshore: true` fits the land cells anyway |
+| 50–80% | the fit runs, and `occurrences.land_note` (also the second entry in `notes`) reports the share excluded |
+| 80% or more | normal fit |
+
+For example, in a box around the western Mediterranean at resolution 6, 9% of 10,487 loggerhead turtle (*Caretta caretta*) cells were on land, and the fit was refused. Marram grass (*Calamagrostis arenaria*), a dune plant, had a land share of 82% in the Netherlands at resolution 8 and fitted normally. Coastal species at fine resolution lose some cells that are mostly sea, so a land share somewhat below 100% is expected for them.
+
 ### Threatened and sensitive species
 
 Data providers often generalise the coordinates of threatened species, for example to a box of about 0.2° (a coordinate uncertainty of about 28 km). The default `max_uncertainty_m` of 1,000 m drops these records. In the 2026-09 snapshot, US records of six California species of conservation concern had 48–95% of records above 1 km uncertainty (median about 28 km for four of them). Two common California species had 17–22% (median about 30 m).

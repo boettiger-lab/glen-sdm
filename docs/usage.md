@@ -60,6 +60,7 @@ A request with bias correction, a state study area and a 2050 projection:
 | `cv_folds` | `5` | number of spatial cross-validation folds; `0` skips cross-validation |
 | `threshold` | `"maxSSS"` | `"maxSSS"` (maximises sensitivity + specificity), `"p10"` (10th percentile of presence suitability), `"mtp"` (minimum training presence), or a number |
 | `project_to` | none | a CHELSA scenario name. See [Data layers: future climate](data-layers.md#future-climate). |
+| `allow_offshore` | `false` | fit even when under half of the occupied cells in the study area are on land. See [Data layers: marine and coastal species](data-layers.md#marine-and-coastal-species). |
 
 ### GBIF options
 
@@ -85,7 +86,7 @@ Models are evaluated by spatial block cross-validation.
 |---|---|
 | `status`, `run_id` | `done`, `running` or `failed`, and the cache key |
 | `mode` | `presence-background` or `presence-absence` |
-| `occurrences` | record and cell counts, the species' class and order, outlier cells removed, records dropped by the coordinate-uncertainty filter, and an `uncertainty_note` when that is more than a quarter of them |
+| `occurrences` | record and cell counts, the species' class and order, outlier cells removed, records dropped by the coordinate-uncertainty filter, and an `uncertainty_note` when that is more than a quarter of them; `presence_cells_in_domain`, `land_share` and, when under 80% of cells are on land, a `land_note` |
 | `domain`, `resolution`, `background_cells`, `background_bias` | the study area and sampling actually used |
 | `covariates`, `top_covariates` | predictors used, and the most important by permutation |
 | `final_model`, `ensemble_weights` | `ensemble` or the single algorithm, and member weights |

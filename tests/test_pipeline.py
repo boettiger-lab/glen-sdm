@@ -84,3 +84,26 @@ def test_map_layers_local(tmp_path, monkeypatch):
     assert len(data["features"]) == lay["display_cells"]
     ring = data["features"][0]["geometry"]["coordinates"][0]
     assert len(ring) == 7 and ring[0] == ring[-1] and len(ring[0]) == 2  # Polygon = [ring], ring = [[x, y], ...]
+
+
+def test_land_share_counts_only_cells_inside_the_study_area():
+    """Presences with no covariates count against the land share only when they
+    are inside the study area; records outside a bbox are not 'offshore'."""
+    con = data.connect()
+    pts = [(37.0 + 0.1 * i, -121.0) for i in range(6)] + [(10.0, -150.0)]   # last one: open Pacific
+    h8 = np.array([h3.str_to_int(h3.latlng_to_cell(la, ln, 8)) for la, ln in pts], dtype="uint64")
+    pres8 = pd.DataFrame({"h8": h8, "n": 1})
+    env_cells = np.array([h3.str_to_int(h3.cell_to_parent(h3.int_to_str(int(c)), 6)) for c in h8[:4]], dtype="uint64")
+
+    # buffer domain covering every record: 4 of 7 cells have covariates
+    dom4 = sorted({h3.str_to_int(h3.cell_to_parent(h3.int_to_str(int(c)), 4)) for c in h8})
+    con.execute("CREATE OR REPLACE TABLE dom4 AS SELECT unnest(?::UBIGINT[]) AS h4", [dom4])
+    assert pipeline.land_share(con, pres8, env_cells, 6, {"type": "buffer"}) == (7, 4)
+
+    # bbox around California only: the Pacific record is outside the study area
+    assert pipeline.land_share(con, pres8, env_cells, 6, {"type": "bbox", "bbox": (-125, 32, -114, 42)}) == (6, 4)
+
+
+def test_allow_offshore_changes_the_run_id():
+    base = {"occurrences": {"gbif": {"species": "Caretta caretta"}}}
+    assert pipeline.run_id(pipeline.normalize(base)) != pipeline.run_id(pipeline.normalize({**base, "allow_offshore": True}))
