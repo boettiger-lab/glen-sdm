@@ -11,7 +11,7 @@ import pandas as pd
 from . import data, evaluate, outputs
 from .models import ALGORITHMS
 
-VERSION = "0.4.0"  # part of the cache key: bump when results would change
+VERSION = "0.5.0"  # part of the cache key: bump when results would change
 DEFAULTS = {
     "algorithms": ["rf", "glm"],
     "covariates": ["climate", "elevation", "landcover", "human_modification"],
@@ -25,6 +25,30 @@ DEFAULTS = {
     "max_cells": 2_000_000,
     "seed": 1,
 }
+
+
+# Every predictor is terrestrial (CHELSA, which covers land only, defines the cell
+# universe), so presences at sea have no covariates and are dropped. Below this
+# share of in-domain presence cells on land, the model would describe only a
+# coastal fringe, and the fit is refused unless the caller passes allow_offshore.
+MIN_LAND_SHARE = 0.5
+WARN_LAND_SHARE = 0.8
+
+
+def land_share(con, pres8, env_cells, res: int, dom: dict) -> tuple[int, int]:
+    """(presence cells at `res` inside the study area, how many of them have covariates)."""
+    con.register("_pres8", pres8)
+    if dom.get("mask_sql"):
+        inside = f"h8 IN ({dom['mask_sql']})"
+    elif dom.get("bbox"):
+        w, s_, e, n = dom["bbox"]
+        inside = (f"h3_cell_to_lat(h8) BETWEEN {s_} AND {n} "
+                  f"AND h3_cell_to_lng(h8) BETWEEN {w} AND {e}")
+    else:
+        inside = "h3_cell_to_parent(h8, 4) IN (SELECT h4 FROM dom4)"
+    cells = con.sql(f"SELECT DISTINCT h3_cell_to_parent(h8, {res})::UBIGINT AS cell "
+                    f"FROM _pres8 WHERE {inside}").df()["cell"].to_numpy()
+    return len(cells), int(np.isin(cells, env_cells).sum())
 
 
 def normalize(spec: dict) -> dict:
@@ -109,6 +133,21 @@ def run(spec: dict, log=print) -> dict:
     con.register("pres8", pres8)
     pres = con.sql(f"SELECT DISTINCT h3_cell_to_parent(h8, {res})::UBIGINT AS cell FROM pres8").df()
     pres_idx = env.reset_index().merge(pres, on="cell")["index"].to_numpy()
+    n_inside, n_land = land_share(con, pres8, env["cell"].to_numpy(), res, dom)
+    share = n_land / n_inside if n_inside else 0.0
+    occ_info["presence_cells_in_domain"] = n_inside
+    occ_info["land_share"] = round(share, 3)
+    if n_inside and share < MIN_LAND_SHARE and not spec.get("allow_offshore"):
+        raise ValueError(
+            f"only {share:.0%} of the {n_inside} occupied cells in the study area are on land. "
+            "This server's predictors (CHELSA climate, terrain, land cover, human modification) "
+            "cover land only, so it cannot model marine or largely offshore species; the fit would "
+            "describe only a coastal fringe. Pass allow_offshore=true to fit the land cells anyway.")
+    if n_inside and share < WARN_LAND_SHARE:
+        occ_info["land_note"] = (
+            f"{1 - share:.0%} of the occupied cells in the study area are offshore or otherwise "
+            "lack land predictors and were excluded; the model describes only the land part of the "
+            "species' distribution.")
     if len(pres_idx) < 5:
         raise ValueError(f"only {len(pres_idx)} presence cells have covariate data")
     abs_idx = None
@@ -264,6 +303,8 @@ def run(spec: dict, log=print) -> dict:
             "n_extrapolated counts covariates outside the training range in each cell.",
         ],
     }
+    if occ_info.get("land_note"):
+        summary["notes"].insert(1, occ_info["land_note"])
     if proj_df is not None:
         both = pred_df[["cell", "suitable"]].merge(proj_df[["cell", "suitable"]], on="cell", suffixes=("_now", "_future"))
         summary["projection"] = {

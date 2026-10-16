@@ -102,6 +102,7 @@ Set `SDM_MODEL_THREADS`, `OMP_NUM_THREADS` and `OPENBLAS_NUM_THREADS` explicitly
 
 ## Known limitations
 
+- All predictors are terrestrial. A fit is refused when under half of the occupied cells in the study area are on land (marine species), unless `allow_offshore` is set; see [docs](https://boettiger-lab.github.io/glen-sdm/data-layers.html#marine-and-coastal-species).
 - Results and job state live on one pod's disk. Multiple replicas need S3 results and job markers, as in mcp-data-server.
 - Continental runs are dominated by reading res-8 covariates in order to average them up. Precomputed coarse covariate stacks would remove most of that cost.
 - The extrapolation flag counts out-of-range covariates and is not a full MESS.

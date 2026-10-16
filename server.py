@@ -131,6 +131,7 @@ def fit_sdm(
     threshold: str | float | None = None,
     ensemble: bool | None = None,
     project_to: str | None = None,
+    allow_offshore: bool | None = None,
 ) -> dict:
     """Fit a species distribution model and return a suitability map, a range
     polygon, and cross-validated performance.
@@ -161,6 +162,9 @@ def fit_sdm(
     - threshold: "maxSSS" (default), "p10", "mtp", or a number, used for the range polygon.
     - ensemble: combine algorithms weighted by CV AUC (default true).
     - project_to: a future climate scenario, e.g. "chelsa-2-1-ssp585-2041-2070".
+    - allow_offshore: all predictors are terrestrial, so a fit is refused when under
+      half of the occupied cells in the study area are on land (marine species).
+      true fits the land cells anyway (default false).
 
     Returns status "done" with metrics, range_by_region (suitable area by
     first-level admin region, largest first; describe the predicted geography
@@ -171,7 +175,7 @@ def fit_sdm(
     spec = {"occurrences": occurrences, "algorithms": algorithms, "covariates": covariates,
             "domain": domain, "resolution": resolution, "background": background,
             "cv_folds": cv_folds, "threshold": threshold, "ensemble": ensemble,
-            "project_to": project_to}
+            "project_to": project_to, "allow_offshore": allow_offshore}
     spec = {k: v for k, v in spec.items() if v is not None}
     try:
         rid, fut = _submit(spec)
