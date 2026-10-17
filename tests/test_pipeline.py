@@ -107,3 +107,36 @@ def test_land_share_counts_only_cells_inside_the_study_area():
 def test_allow_offshore_changes_the_run_id():
     base = {"occurrences": {"gbif": {"species": "Caretta caretta"}}}
     assert pipeline.run_id(pipeline.normalize(base)) != pipeline.run_id(pipeline.normalize({**base, "allow_offshore": True}))
+
+
+def test_marine_spec_defaults_and_checks():
+    occ = {"obis": {"species": "Posidonia oceanica"}}
+    s = pipeline.normalize({"realm": "marine", "occurrences": occ})
+    assert s["covariates"] == pipeline.MARINE_DEFAULT_COVARIATES
+    with pytest.raises(ValueError, match="project_to"):
+        pipeline.normalize({"realm": "marine", "occurrences": occ, "project_to": "chelsa-2-1-ssp585-2041-2070"})
+    with pytest.raises(ValueError, match="buffer"):
+        pipeline.normalize({"realm": "marine", "occurrences": occ, "domain": {"type": "country", "country": "ES"}})
+    with pytest.raises(ValueError, match="realm"):
+        pipeline.normalize({"realm": "marine", "occurrences": occ, "covariates": ["climate"]})
+    with pytest.raises(ValueError, match="seafloor"):
+        pipeline.normalize({"realm": "marine", "occurrences": occ, "covariates": ["ocean"],
+                            "domain": {"type": "buffer", "depth_range": [0, 50]}})
+    with pytest.raises(ValueError, match="marine models only"):
+        pipeline.normalize({"occurrences": occ, "domain": {"type": "buffer", "depth_range": [0, 50]}})
+    # a terrestrial spec is unchanged by the realm machinery, so its cache key is too
+    t = {"occurrences": {"gbif": {"species": "Lynx pardinus"}}}
+    assert pipeline.run_id(pipeline.normalize(t)) == pipeline.run_id(pipeline.normalize(dict(t)))
+    assert "realm" not in pipeline.normalize(t)
+
+
+def test_marine_layer_sql_joins_variables_on_h6():
+    sql = data._marine_layer_sql("seafloor")
+    assert sql.count("read_parquet(") == len(data.MARINE_GROUPS["seafloor"])
+    assert "USING (h6)" in sql and "(-t0.bathymetry_mean)::DOUBLE AS depth" in sql
+    assert data.layer_info("seafloor")["realm"] == "marine" and data.layer_info("climate")["realm"] == "terrestrial"
+
+
+def test_mode_ignores_missing_ranks():
+    assert data._mode(pd.Series([None, None])) is None
+    assert data._mode(pd.Series([None, "Testudines", "Testudines"])) == "Testudines"

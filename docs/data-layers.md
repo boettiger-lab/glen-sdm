@@ -57,6 +57,8 @@ The server measures the share of occupied cells inside the study area that are o
 | 50–80% | the fit runs, and `occurrences.land_note` (also the second entry in `notes`) reports the share excluded |
 | 80% or more | normal fit |
 
+For marine species, use the [marine mode](marine.md) (`realm: "marine"`), which uses OBIS records and Bio-ORACLE ocean predictors.
+
 For example, in a box around the western Mediterranean at resolution 6, 9% of 10,487 loggerhead turtle (*Caretta caretta*) cells were on land, and the fit was refused. Marram grass (*Calamagrostis arenaria*), a dune plant, had a land share of 82% in the Netherlands at resolution 8 and fitted normally. Coastal species at fine resolution lose some cells that are mostly sea, so a land share somewhat below 100% is expected for them.
 
 ### Threatened and sensitive species

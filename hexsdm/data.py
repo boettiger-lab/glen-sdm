@@ -69,6 +69,9 @@ GHM = "s3://public-human-modification/ghm/hex/h0=*/data_0.parquet"
 REGIONS = "s3://public-overturemaps/2026-02-18.0/regions/hex/h0=*/data_0.parquet"
 COUNTRIES = "s3://public-overturemaps/2026-02-18.0/countries/hex/h0=*/data_0.parquet"
 
+OBIS_HEX = "s3://public-obis/2026-09-09/hex/h0=*/data_0.parquet"
+BIO_ORACLE = "s3://public-bio-oracle/{layer}/hex/h0=*/data_0.parquet"
+
 BIO_VARS = ["bio1", "bio4", "bio5", "bio6", "bio12", "bio15", "bio17"]
 BIO_DESC = {
     "bio1": "annual mean temperature (C)",
@@ -122,6 +125,75 @@ COVARIATE_LAYERS = {
         "source": "global-human-modification",
     },
 }
+
+
+# Marine predictors: Bio-ORACLE v3.0, 2010s baseline, native at H3 res 6 (one
+# ~5.5 km source pixel per cell). Each variable is its own parquet; a group joins
+# them on h6. (column alias, Bio-ORACLE layer path, source column, SQL transform)
+MARINE_GROUPS = {
+    "ocean": [
+        ("thetao", "depthmean/thetao-mean", "thetao_mean", None),
+        ("so", "depthmean/so-mean", "so_mean", None),
+        ("o2", "depthmean/o2-mean", "o2_mean", None),
+        ("phyc", "depthmean/phyc-mean", "phyc_mean", None),
+        ("ph", "depthmean/ph-mean", "ph_mean", None),
+        ("no3", "depthmean/no3-mean", "no3_mean", None),
+    ],
+    "nutrients_extra": [
+        ("po4", "depthmean/po4-mean", "po4_mean", None),
+        ("si", "depthmean/si-mean", "si_mean", None),
+        ("dfe", "depthmean/dfe-mean", "dfe_mean", None),
+    ],
+    "currents": [
+        ("sws", "depthmean/sws-mean", "sws_mean", None),
+        ("swd_sin", "depthmean/swd-mean-sin", "swd_sin", None),
+        ("swd_cos", "depthmean/swd-mean-cos", "swd_cos", None),
+    ],
+    "seafloor": [
+        ("depth", "terrain/bathymetry-mean", "bathymetry_mean", "-{c}"),   # metres, positive down
+        ("slope", "terrain/slope", "slope", None),
+        ("aspect_sin", "terrain/aspect-sin", "aspect_sin", None),
+        ("aspect_cos", "terrain/aspect-cos", "aspect_cos", None),
+        ("tpi", "terrain/tpi", "topographic_position_index", None),
+        ("tri", "terrain/tri", "terrain_ruggedness_index", None),
+    ],
+}
+MARINE_DESC = {
+    "ocean": "Bio-ORACLE v3.0 depth-mean temperature, salinity, dissolved oxygen, phytoplankton carbon, pH and nitrate (2010s baseline).",
+    "nutrients_extra": "Bio-ORACLE v3.0 depth-mean phosphate, silicate and dissolved iron (2010s baseline).",
+    "currents": "Bio-ORACLE v3.0 depth-mean current speed and direction (sine and cosine of the bearing).",
+    "seafloor": "Bio-ORACLE v3.0 benthic terrain: depth (m, positive down), slope, aspect (sine, cosine), topographic position and ruggedness indices.",
+}
+MARINE_LAYERS = {
+    g: {"description": MARINE_DESC[g], "columns": [v[0] for v in vs], "source": "bio-oracle-v3.0",
+        "h3_column": "h6", "realm": "marine"}
+    for g, vs in MARINE_GROUPS.items()
+}
+MARINE_RES = 6   # Bio-ORACLE's native resolution; finer cells would only repeat values
+
+
+def _marine_layer_sql(name: str) -> str:
+    """SQL for one Bio-ORACLE group: h6 + its columns, joined across variables,
+    restricted to the domain (temp tables dom4, dom0)."""
+    parts = MARINE_GROUPS[name]
+    sel, joins = [], []
+    for i, (alias, layer, col, expr) in enumerate(parts):
+        t = f"t{i}"
+        v = f"{t}.{col}"
+        sel.append(f"({expr.format(c=v) if expr else v})::DOUBLE AS {alias}")
+        src = (f"(SELECT h6, {col} FROM read_parquet('{BIO_ORACLE.format(layer=layer)}', hive_partitioning=true) "
+               f"WHERE h0 IN (SELECT h0 FROM dom0) AND h3_cell_to_parent(h6, 4) IN (SELECT h4 FROM dom4)) {t}")
+        joins.append(src if i == 0 else f"JOIN {src} USING (h6)")
+    return f"SELECT h6, {', '.join(sel)} FROM {' '.join(joins)}"
+
+
+def layer_info(name: str) -> dict:
+    """Metadata for a built-in covariate group of either realm."""
+    if name in COVARIATE_LAYERS:
+        return {**COVARIATE_LAYERS[name], "h3_column": "h8", "realm": "terrestrial"}
+    if name in MARINE_LAYERS:
+        return MARINE_LAYERS[name]
+    raise ValueError(f"unknown covariate layer {name!r}; choose from {list(COVARIATE_LAYERS) + list(MARINE_LAYERS)}")
 
 
 def _layer_sql(name: str, period: str = "baseline-1981-2010") -> str:
@@ -330,8 +402,66 @@ def remove_spatial_outliers(pres: pd.DataFrame, multiplier: float = 5.0, max_poi
     return pres[keep].reset_index(drop=True), int((~keep).sum())
 
 
+def _mode(col: pd.Series):
+    """Most common non-null value, or None (WoRMS leaves some ranks empty, e.g. no class
+    for sea turtles)."""
+    m = col.dropna().mode()
+    return m.iat[0] if len(m) else None
+
+
+def obis_occurrences(con, spec: dict) -> tuple[pd.DataFrame, dict]:
+    """Occurrence counts per h8 cell for an OBIS species (records already pass OBIS
+    quality control, and absences are excluded at ingest).
+
+    spec: {"species": "Genus species"} or {"aphiaid": 137205}; optional min_year,
+    max_year, max_uncertainty_m (default 1000), depth_range [min_m, max_m]
+    (keeps records whose reported depth interval overlaps it, or that report none).
+    """
+    if "aphiaid" in spec:
+        key = f"aphiaid = {int(spec['aphiaid'])}"
+    elif "species" in spec:
+        key = f"species = {q(spec['species'])}"
+    else:
+        raise ValueError("obis occurrences need 'species' or 'aphiaid'")
+    where = [key]
+    unc = float(spec.get("max_uncertainty_m", 1000))
+    unc_ok = f"coordinateuncertaintyinmeters IS NULL OR coordinateuncertaintyinmeters <= {unc}"
+    if spec.get("min_year"):
+        where.append(f"date_year >= {int(spec['min_year'])}")
+    if spec.get("max_year"):
+        where.append(f"date_year <= {int(spec['max_year'])}")
+    dr = spec.get("depth_range")
+    if dr:
+        lo, hi = float(dr[0]), float(dr[1])
+        where.append(f"(maximumdepthinmeters IS NULL OR maximumdepthinmeters >= {lo})")
+        where.append(f"(minimumdepthinmeters IS NULL OR minimumdepthinmeters <= {hi})")
+    df = con.sql(f"""
+      SELECT h8, (count(*) FILTER ({unc_ok}))::INT AS n, count(*)::INT AS n_all,
+             any_value(class) AS class, any_value("order") AS "order"
+      FROM read_parquet('{OBIS_HEX}', hive_partitioning=true)
+      WHERE {' AND '.join(where)}
+      GROUP BY h8
+    """).df()
+    if len(df) == 0 and "species" in spec:
+        raise ValueError(f"no OBIS records for {spec['species']!r}. OBIS names follow WoRMS, "
+                         "which can differ from GBIF; try the WoRMS accepted name or an aphiaid.")
+    n_all, n_kept = int(df.n_all.sum()), int(df.n.sum())
+    info = {"records_before_uncertainty_filter": n_all,
+            "dropped_by_uncertainty_filter": n_all - n_kept, "max_uncertainty_m": unc}
+    return df[df.n > 0].reset_index(drop=True), info
+
+
 def load_occurrences(con, occ: dict) -> tuple[pd.DataFrame, pd.DataFrame | None, dict]:
     """Return (presences per h8, absences per h8 or None, info)."""
+    if "obis" in occ:
+        pres, unc_info = obis_occurrences(con, occ["obis"])
+        info = {"source": "obis", "records": int(pres.n.sum()) if len(pres) else 0, **unc_info,
+                "class": _mode(pres["class"]), "order": _mode(pres["order"])}
+        pres = pres[["h8", "n"]]
+        if occ["obis"].get("outlier_filter", True):
+            pres, dropped = remove_spatial_outliers(pres)
+            info["outlier_cells_removed"] = dropped
+        return pres, None, info
     if "gbif" in occ:
         pres, unc_info = gbif_occurrences(con, occ["gbif"])
         info = {"source": "gbif", "records": int(pres.n.sum()) if len(pres) else 0, **unc_info,
@@ -406,12 +536,12 @@ def build_domain(con, pres: pd.DataFrame, domain: dict | None) -> dict:
             "mask_sql": mask_sql, "bbox": domain.get("_bbox")}
 
 
-def choose_resolution(approx_h8_cells: int, requested: int | None, max_cells: int) -> int:
+def choose_resolution(approx_h8_cells: int, requested: int | None, max_cells: int, finest: int = 8) -> int:
     if requested:
-        if not 5 <= int(requested) <= 8:
-            raise ValueError("resolution must be between 5 and 8")
+        if not 5 <= int(requested) <= finest:
+            raise ValueError(f"resolution must be between 5 and {finest}")
         return int(requested)
-    res = 8
+    res = finest
     while res > 5 and approx_h8_cells / 7 ** (8 - res) > max_cells:
         res -= 1
     return res
@@ -426,37 +556,45 @@ def load_covariates(con, layers: list, res: int, dom: dict, period: str = "basel
 
     The climate group (if requested) defines the land cell universe; other groups
     are left-joined (land-cover fractions missing -> 0, others -> column median)."""
-    names, sqls = [], []
+    names, sqls, hcols = [], [], []
     for layer in layers:
         if isinstance(layer, dict):
             sql, cols = _custom_layer_sql(layer)
             names.append((layer.get("name", "custom"), cols))
+            hcols.append("h8")
+        elif layer in MARINE_LAYERS:
+            sql = _marine_layer_sql(layer)
+            names.append((layer, MARINE_LAYERS[layer]["columns"]))
+            hcols.append("h6")
         else:
             sql = _layer_sql(layer, period)
             names.append((layer, COVARIATE_LAYERS[layer]["columns"]))
+            hcols.append("h8")
         sqls.append(sql)
-    mask = ""
-    if dom.get("mask_sql"):
-        mask = f"WHERE h8 IN ({dom['mask_sql']})"
-    elif dom.get("bbox"):
-        w, s, e, n = dom["bbox"]
-        mask = (f"WHERE h3_cell_to_lat(h8) BETWEEN {s} AND {n} "
-                f"AND h3_cell_to_lng(h8) BETWEEN {w} AND {e}")
     cols_all = [c for _, cols in names for c in cols]
 
-    def one(sql_cols):
-        sql, cols = sql_cols
+    def mask_for(h):
+        if dom.get("mask_sql"):
+            return f"WHERE {h} IN ({dom['mask_sql']})"
+        if dom.get("bbox"):
+            w, s, e, n = dom["bbox"]
+            return (f"WHERE h3_cell_to_lat({h}) BETWEEN {s} AND {n} "
+                    f"AND h3_cell_to_lng({h}) BETWEEN {w} AND {e}")
+        return ""
+
+    def one(args):
+        sql, cols, h = args
         sel = ", ".join(f"avg({c})::FLOAT AS {c}" for c in cols)
         cur = con.cursor()  # one connection per layer: S3 reads overlap across layers
         try:
-            return cur.sql(f"SELECT h3_cell_to_parent(h8, {res}) AS cell, {sel} "
-                           f"FROM ({sql}) {mask} GROUP BY 1").df().set_index("cell")
+            return cur.sql(f"SELECT h3_cell_to_parent({h}, {res}) AS cell, {sel} "
+                           f"FROM ({sql}) {mask_for(h)} GROUP BY 1").df().set_index("cell")
         finally:
             cur.close()
 
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(len(sqls)) as ex:
-        parts = list(ex.map(one, [(sq, cols) for sq, (_, cols) in zip(sqls, names)]))
+        parts = list(ex.map(one, [(sq, cols, h) for sq, (_, cols), h in zip(sqls, names, hcols)]))
     # The first layer defines the cell universe (climate by default), others left join.
     df = parts[0].join(parts[1:], how="left") if len(parts) > 1 else parts[0]
     df = df.reset_index().sort_values("cell", kind="stable")
@@ -471,10 +609,21 @@ def load_covariates(con, layers: list, res: int, dom: dict, period: str = "basel
     return df.reset_index(drop=True), cols_all
 
 
-def target_group_effort(con, rank: str, name: str, res: int) -> pd.DataFrame:
-    """GBIF record counts for a whole taxonomic group per domain cell (sampling effort)."""
+def target_group_effort(con, rank: str, name: str, res: int, source: str = "gbif") -> pd.DataFrame:
+    """Record counts for a whole taxonomic group per domain cell (sampling effort),
+    from GBIF or OBIS."""
     if rank not in ("class", "order", "family", "phylum", "kingdom", "genus"):
         raise ValueError("target_group rank must be a Linnaean rank column")
+    if source == "obis":
+        df = con.sql(f"""
+          SELECT h3_cell_to_parent(h8, {res}) AS cell, count(*)::DOUBLE AS effort
+          FROM read_parquet('{OBIS_HEX}', hive_partitioning=true)
+          WHERE h0 IN (SELECT h0 FROM dom0) AND h3_cell_to_parent(h8, 4) IN (SELECT h4 FROM dom4)
+            AND "{rank}" = {q(name)}
+          GROUP BY 1
+        """).df()
+        df["cell"] = df["cell"].astype("uint64")
+        return df
     sql = f"""
       SELECT h3_cell_to_parent(h8, {res}) AS cell, count(*)::DOUBLE AS effort
       FROM read_parquet('{GBIF_HEX}', hive_partitioning=true)

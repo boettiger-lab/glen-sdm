@@ -51,8 +51,39 @@ def land_share(con, pres8, env_cells, res: int, dom: dict) -> tuple[int, int]:
     return len(cells), int(np.isin(cells, env_cells).sum())
 
 
+MARINE_DEFAULT_COVARIATES = ["ocean", "currents", "seafloor"]
+MARINE_NOTES = [
+    "Marine predictors are Bio-ORACLE v3.0 depth-mean and seafloor layers (2010s baseline) at H3 resolution 6. "
+    "Depth-mean values average the whole water column, which fits surface-dwelling and bottom-dwelling species only approximately.",
+    "For highly mobile species this climatological model shows broad habitat, not where animals are at a given time.",
+]
+
+
 def normalize(spec: dict) -> dict:
     s = {**DEFAULTS, **{k: v for k, v in spec.items() if v is not None}}
+    realm = spec.get("realm") or "terrestrial"
+    if realm not in ("terrestrial", "marine"):
+        raise ValueError("realm must be 'terrestrial' or 'marine'")
+    if realm == "marine":
+        if spec.get("covariates") is None:
+            s["covariates"] = list(MARINE_DEFAULT_COVARIATES)
+        if s.get("project_to"):
+            raise ValueError("project_to is not available for marine models yet: the catalog has no "
+                             "Bio-ORACLE future layers (data-workflows#755)")
+        dtype = (s.get("domain") or {}).get("type", "buffer")
+        if dtype not in ("buffer", "bbox"):
+            raise ValueError("marine models take a 'buffer' or 'bbox' study area (country and region "
+                             "boundaries are land)")
+    for layer in s["covariates"]:
+        if isinstance(layer, str) and data.layer_info(layer)["realm"] != realm:
+            raise ValueError(f"covariate group {layer!r} belongs to the "
+                             f"{data.layer_info(layer)['realm']} realm, not {realm}")
+    dr = (s.get("domain") or {}).get("depth_range")
+    if dr is not None:
+        if realm != "marine":
+            raise ValueError("domain.depth_range applies to marine models only")
+        if "seafloor" not in s["covariates"]:
+            raise ValueError("domain.depth_range needs the 'seafloor' covariate group (for depth)")
     s["background"] = {**DEFAULTS["background"], **(spec.get("background") or {})}
     unknown = [a for a in s["algorithms"] if a not in ALGORITHMS]
     if unknown:
@@ -120,11 +151,17 @@ def run(spec: dict, log=print) -> dict:
 
     # 2. domain + resolution
     dom = data.build_domain(con, pres8, spec["domain"])
-    res = data.choose_resolution(dom["approx_h8_cells"], spec["resolution"], spec["max_cells"])
+    marine = spec.get("realm") == "marine"
+    res = data.choose_resolution(dom["approx_h8_cells"], spec["resolution"], spec["max_cells"],
+                                 finest=data.MARINE_RES if marine else 8)
     tick("domain")
 
     # 3. covariates
     env, cols = data.load_covariates(con, spec["covariates"], res, dom)
+    dr = (spec.get("domain") or {}).get("depth_range")
+    if dr is not None:
+        env = env[(env["depth"] >= float(dr[0])) & (env["depth"] <= float(dr[1]))].reset_index(drop=True)
+        dom["depth_range"] = [float(dr[0]), float(dr[1])]
     if len(env) == 0:
         raise ValueError("no covariate cells in the domain")
     tick("covariates")
@@ -137,13 +174,27 @@ def run(spec: dict, log=print) -> dict:
     share = n_land / n_inside if n_inside else 0.0
     occ_info["presence_cells_in_domain"] = n_inside
     occ_info["land_share"] = round(share, 3)
-    if n_inside and share < MIN_LAND_SHARE and not spec.get("allow_offshore"):
+    if marine:
+        occ_info["ocean_share"] = occ_info.pop("land_share")
+        if n_inside and share < MIN_LAND_SHARE and not spec.get("allow_onshore"):
+            raise ValueError(
+                f"only {share:.0%} of the {n_inside} occupied cells in the study area have marine "
+                "predictors (Bio-ORACLE ocean cells"
+                + (", within the depth range" if dr is not None else "") +
+                "), so this looks like a terrestrial or freshwater species, or the depth range excludes "
+                "most records. Use realm 'terrestrial', widen depth_range, or pass allow_onshore=true.")
+        if n_inside and share < WARN_LAND_SHARE:
+            occ_info["land_note"] = (
+                f"{1 - share:.0%} of the occupied cells in the study area lack marine predictors "
+                "(land, or outside the depth range) and were excluded.")
+    elif n_inside and share < MIN_LAND_SHARE and not spec.get("allow_offshore"):
         raise ValueError(
             f"only {share:.0%} of the {n_inside} occupied cells in the study area are on land. "
-            "This server's predictors (CHELSA climate, terrain, land cover, human modification) "
-            "cover land only, so it cannot model marine or largely offshore species; the fit would "
-            "describe only a coastal fringe. Pass allow_offshore=true to fit the land cells anyway.")
-    if n_inside and share < WARN_LAND_SHARE:
+            "This server's terrestrial predictors (CHELSA climate, terrain, land cover, human "
+            "modification) cover land only, so the fit would describe only a coastal fringe. For a "
+            "marine species use realm 'marine' (OBIS records and Bio-ORACLE predictors), or pass "
+            "allow_offshore=true to fit the land cells anyway.")
+    elif n_inside and share < WARN_LAND_SHARE:
         occ_info["land_note"] = (
             f"{1 - share:.0%} of the occupied cells in the study area are offshore or otherwise "
             "lack land predictors and were excluded; the model describes only the land part of the "
@@ -163,9 +214,12 @@ def run(spec: dict, log=print) -> dict:
     if bias == "target_group":
         rank = spec["background"].get("target_rank", "class")
         name = spec["background"].get("target_name") or occ_info.get(rank)
+        if not name and "target_rank" not in spec["background"] and occ_info.get("order"):
+            rank, name = "order", occ_info["order"]   # e.g. WoRMS gives sea turtles no class
         if not name:
-            raise ValueError("target_group background needs target_name (or GBIF occurrences)")
-        effort = data.target_group_effort(con, rank, name, res)
+            raise ValueError("target_group background needs target_name (or GBIF or OBIS occurrences)")
+        effort = data.target_group_effort(con, rank, name, res,
+                                          source="obis" if occ_info.get("source") == "obis" else "gbif")
         tg = {"rank": rank, "name": name, "cells_with_effort": int(len(effort))}
         tick("target_group_effort")
     if abs_idx is not None and len(abs_idx) >= 5 and not spec["background"].get("add_background"):
@@ -265,6 +319,8 @@ def run(spec: dict, log=print) -> dict:
     # 9. write outputs
     area = outputs.cell_area_km2(res)
     try:
+        if marine:   # Overture regions are land; marine ecoregions are not in the summary yet
+            raise RuntimeError("no marine region summary")
         regions_now = data.region_summary(con, pred_df.cell[pred_df.suitable].to_numpy(), res)
         regions_future = (data.region_summary(con, proj_df.cell[proj_df.suitable].to_numpy(), res)
                           if proj_df is not None else None)
@@ -293,7 +349,7 @@ def run(spec: dict, log=print) -> dict:
         "suitable_area_km2": round(float(pred_df.suitable.sum()) * area, 1),
         "range_by_region": regions_now,
         "notes": [
-            (f"Background: {len(bg_idx)} cells sampled in proportion to GBIF records of "
+            (f"Background: {len(bg_idx)} cells sampled in proportion to {'OBIS' if occ_info.get('source') == 'obis' else 'GBIF'} records of "
              f"{tg['rank']} {tg['name']} (target-group correction for sampling bias)." if tg else
              f"Background: {len(bg_idx)} uniformly random cells; no correction for sampling "
              "bias was applied." if mode == "presence-background" else
@@ -305,6 +361,9 @@ def run(spec: dict, log=print) -> dict:
     }
     if occ_info.get("land_note"):
         summary["notes"].insert(1, occ_info["land_note"])
+    if marine:
+        summary["realm"] = "marine"
+        summary["notes"][1:1] = MARINE_NOTES
     if proj_df is not None:
         both = pred_df[["cell", "suitable"]].merge(proj_df[["cell", "suitable"]], on="cell", suffixes=("_now", "_future"))
         summary["projection"] = {

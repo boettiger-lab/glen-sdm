@@ -1,6 +1,6 @@
 ---
 title: Algorithms
-nav_order: 4
+nav_order: 5
 ---
 
 # Species distribution model algorithms: literature and implementations
