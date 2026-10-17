@@ -91,11 +91,14 @@ def list_covariate_layers() -> dict:
     "columns": ["col1", ...], "h3_column": "h8"} for any H3-indexed parquet at
     resolution 8 or finer."""
     return {"layers": COV_INFO, "default": pipeline.DEFAULTS["covariates"],
-            "future_scenarios": [f"chelsa-2-1-{s}" for s in data.FUTURE_SCENARIOS]}
+            "future_scenarios": [f"chelsa-2-1-{s}" for s in data.FUTURE_SCENARIOS],
+            "marine_layers": MARINE_COV_INFO, "marine_default": pipeline.MARINE_DEFAULT_COVARIATES}
 
 
 COV_INFO = {k: {"description": v["description"], "columns": v["columns"], "stac_collection": v["source"]}
             for k, v in data.COVARIATE_LAYERS.items()}
+MARINE_COV_INFO = {k: {"description": v["description"], "columns": v["columns"], "stac_collection": v["source"]}
+                   for k, v in data.MARINE_LAYERS.items()}
 
 
 def _submit(spec: dict) -> tuple[str, concurrent.futures.Future | None]:
@@ -132,6 +135,8 @@ def fit_sdm(
     ensemble: bool | None = None,
     project_to: str | None = None,
     allow_offshore: bool | None = None,
+    realm: str | None = None,
+    allow_onshore: bool | None = None,
 ) -> dict:
     """Fit a species distribution model and return a suitability map, a range
     polygon, and cross-validated performance.
@@ -165,6 +170,13 @@ def fit_sdm(
     - allow_offshore: all predictors are terrestrial, so a fit is refused when under
       half of the occupied cells in the study area are on land (marine species).
       true fits the land cells anyway (default false).
+    - realm: "terrestrial" (default) or "marine" (prototype). Marine models use Bio-ORACLE v3.0
+      predictor groups (ocean, nutrients_extra, currents, seafloor; default ocean, currents,
+      seafloor) at H3 resolution 6 or coarser, occurrences {"obis": {"species": "Genus species"}}
+      (WoRMS names; also aphiaid, min_year, max_year, depth_range [min_m, max_m]) or GBIF/user
+      points, a buffer or bbox domain, optionally with domain.depth_range [min_m, max_m] to limit
+      cells and background to plausible depths. No project_to yet. A marine fit is refused when
+      under half the occupied cells have marine predictors, unless allow_onshore is true.
 
     Returns status "done" with metrics, range_by_region (suitable area by
     first-level admin region, largest first; describe the predicted geography
@@ -175,7 +187,8 @@ def fit_sdm(
     spec = {"occurrences": occurrences, "algorithms": algorithms, "covariates": covariates,
             "domain": domain, "resolution": resolution, "background": background,
             "cv_folds": cv_folds, "threshold": threshold, "ensemble": ensemble,
-            "project_to": project_to, "allow_offshore": allow_offshore}
+            "project_to": project_to, "allow_offshore": allow_offshore,
+            "realm": realm, "allow_onshore": allow_onshore}
     spec = {k: v for k, v in spec.items() if v is not None}
     try:
         rid, fut = _submit(spec)

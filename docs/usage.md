@@ -60,6 +60,8 @@ A request with bias correction, a state study area and a 2050 projection:
 | `cv_folds` | `5` | number of spatial cross-validation folds; `0` skips cross-validation |
 | `threshold` | `"maxSSS"` | `"maxSSS"` (maximises sensitivity + specificity), `"p10"` (10th percentile of presence suitability), `"mtp"` (minimum training presence), or a number |
 | `project_to` | none | a CHELSA scenario name. See [Data layers: future climate](data-layers.md#future-climate). |
+| `realm` | `"terrestrial"` | `"marine"` uses OBIS and Bio-ORACLE predictors. See [Marine models](marine.md). |
+| `allow_onshore` | `false` | marine models only: fit even when under half of the occupied cells have marine predictors. |
 | `allow_offshore` | `false` | fit even when under half of the occupied cells in the study area are on land. See [Data layers: marine and coastal species](data-layers.md#marine-and-coastal-species). |
 
 ### GBIF options

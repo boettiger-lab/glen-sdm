@@ -28,6 +28,7 @@ Every step works on H3 cells. All input layers are already indexed at H3 resolut
 
 - [Data layers](data-layers.md): which datasets go into a model, and which of them you can change.
 - [Using fit_sdm](usage.md): all parameters, the polling pattern, and the outputs.
+- [Marine models](marine.md): the prototype marine mode with OBIS records and Bio-ORACLE predictors.
 - [Algorithms](algorithms.md): the methods, their literature and implementations.
 - [Benchmarks](benchmarks.md): speed, agreement with R reference implementations, and validation.
 
