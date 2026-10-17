@@ -231,10 +231,15 @@ async def _fit_sdm_tool(
     threshold: str | float | None = None,
     ensemble: bool | None = None,
     project_to: str | None = None,
+    allow_offshore: bool | None = None,
+    realm: str | None = None,
+    allow_onshore: bool | None = None,
 ) -> dict:
+    # Keep this signature in step with fit_sdm (tests/test_server.py checks it).
     return await anyio.to_thread.run_sync(lambda: fit_sdm(
         occurrences, algorithms, covariates, domain, resolution, background,
-        cv_folds, threshold, ensemble, project_to))
+        cv_folds, threshold, ensemble, project_to,
+        allow_offshore=allow_offshore, realm=realm, allow_onshore=allow_onshore))
 
 
 async def _get_sdm_result_tool(run_id: str, wait_seconds: float = 30) -> dict:
